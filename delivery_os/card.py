@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -40,16 +41,23 @@ class Card:
 
 
 _FIELD_NAMES = {f.name for f in dataclasses.fields(Card)}
+# Loader-owned: derived from the file itself, never authored in frontmatter.
+_LOADER_OWNED = {"path", "intent"}
+_AUTHORABLE = _FIELD_NAMES - _LOADER_OWNED
+# Line-anchored: a bare `---` line only. Free-text fields legitimately
+# contain "---" (horizontal rules, em-dashes, pasted text).
+_FRONTMATTER_RE = re.compile(r"(?m)^---\s*$")
 
 
 def load_card(path: str | Path) -> Card:
     path = Path(path)
     text = path.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        raise ValueError(f"{path}: missing YAML frontmatter")
-    _, front, body = text.split("---", 2)
+    parts = _FRONTMATTER_RE.split(text, maxsplit=2)
+    if len(parts) < 3 or parts[0].strip():
+        raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
+    _, front, body = parts
     data = yaml.safe_load(front) or {}
-    unknown = sorted(set(data) - _FIELD_NAMES)
+    unknown = sorted(set(data) - _AUTHORABLE)
     if unknown:
         raise ValueError(f"{path}: unknown fields {unknown}")
     data["path"] = path

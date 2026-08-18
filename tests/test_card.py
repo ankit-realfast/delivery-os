@@ -89,3 +89,83 @@ def test_load_all_finds_cards_recursively_and_sorts_by_id(tmp_path):
     _write(tmp_path, "C-0001-webhooks.md", T2_CARD)
     cards = load_all(tmp_path)
     assert [c.id for c in cards] == ["C-0001", "C-0002"]
+
+
+def test_title_with_unquoted_triple_dash_is_preserved(tmp_path):
+    # Regression: naive substring split would truncate at the first ---
+    body = """---
+id: C-0099
+title: fix pipeline step - a --- b step
+tier: T1
+state: draft
+---
+Body text here.
+"""
+    card = load_card(_write(tmp_path, "C-0099.md", body))
+    assert card.id == "C-0099"
+    assert card.title == "fix pipeline step - a --- b step"
+    assert card.tier == "T1"
+    assert card.state == "draft"
+
+
+def test_value_line_with_quoted_triple_dash_is_preserved(tmp_path):
+    # Regression: naive substring split would fail on quoted --- in YAML
+    body = """---
+id: C-0098
+title: webhook delivery
+tier: T2
+state: commit
+value_line: "before --- after"
+---
+Body text here.
+"""
+    card = load_card(_write(tmp_path, "C-0098.md", body))
+    assert card.id == "C-0098"
+    assert card.value_line == "before --- after"
+
+
+def test_unterminated_frontmatter_is_rejected(tmp_path):
+    # Only opening ---, no closing --- delimiter
+    body = """---
+id: C-0097
+title: incomplete
+tier: T1
+state: draft
+"""
+    with pytest.raises(ValueError, match="frontmatter"):
+        load_card(_write(tmp_path, "C-0097.md", body))
+
+
+def test_body_with_markdown_horizontal_rule_is_preserved(tmp_path):
+    # Markdown horizontal rule (--- on its own line) should stay in body
+    body = """---
+id: C-0096
+title: with horizontal rule
+tier: T1
+state: draft
+---
+This is the body.
+
+---
+
+That was a horizontal rule.
+"""
+    card = load_card(_write(tmp_path, "C-0096.md", body))
+    assert card.id == "C-0096"
+    assert "---" in card.intent
+    assert card.intent == "This is the body.\n\n---\n\nThat was a horizontal rule."
+
+
+def test_intent_key_in_frontmatter_is_rejected(tmp_path):
+    # intent is loader-owned; should not be in frontmatter
+    body = """---
+id: C-0095
+title: bad key
+tier: T1
+state: draft
+intent: should not be here
+---
+Actual body.
+"""
+    with pytest.raises(ValueError, match="unknown fields"):
+        load_card(_write(tmp_path, "C-0095.md", body))
