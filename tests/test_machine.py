@@ -1,0 +1,66 @@
+from datetime import datetime, timezone
+
+import pytest
+
+from delivery_os.card import Card
+from delivery_os.machine import IllegalTransition, move_card, record_verify
+
+NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+
+
+def card(state="draft", **kw) -> Card:
+    base = dict(id="C-0002", title="t", tier="T1", state=state, parent="C-0001",
+                eval="evals/C-0002_test.py::test_x")
+    base.update(kw)
+    return Card(intent="x", **base)
+
+
+def test_move_appends_history_and_sets_state():
+    moved = move_card(card(), "contest", by="akp", now=NOW)
+    assert moved.state == "contest"
+    assert moved.history[-1] == {"state": "contest", "at": "2026-08-19T12:00:00+00:00", "by": "akp"}
+
+
+def test_move_does_not_mutate_the_original():
+    original = card()
+    move_card(original, "contest", by="akp", now=NOW)
+    assert original.state == "draft"
+    assert original.history == []
+
+
+def test_t1_card_skips_contest_entirely():
+    # Spec 4: "T1 - reversible. No contest." A T1 card needs no client decision.
+    assert move_card(card("draft", tier="T1"), "commit", by="akp", now=NOW).state == "commit"
+
+
+def test_t2_card_may_not_skip_contest():
+    with pytest.raises(IllegalTransition, match="draft -> commit"):
+        move_card(card("draft", tier="T2"), "commit", by="akp", now=NOW)
+
+
+def test_illegal_transition_is_refused():
+    with pytest.raises(IllegalTransition, match="commit -> observe"):
+        move_card(card("commit"), "observe", by="akp", now=NOW)
+
+
+def test_contest_can_return_to_draft():
+    assert move_card(card("contest"), "draft", by="akp", now=NOW).state == "draft"
+
+
+def test_verify_failure_with_wrong_build_goes_back_to_build():
+    assert move_card(card("verify"), "build", by="akp", now=NOW).state == "build"
+
+
+def test_verify_failure_with_right_build_goes_back_to_contest():
+    assert move_card(card("verify"), "contest", by="akp", now=NOW).state == "contest"
+
+
+def test_record_verify_writes_pass_into_history():
+    c = record_verify(card("verify"), passed=True, by="ci", now=NOW)
+    assert c.history[-1]["verify"] == "pass"
+    assert c.state == "verify"
+
+
+def test_record_verify_writes_fail_into_history():
+    c = record_verify(card("verify"), passed=False, by="ci", now=NOW)
+    assert c.history[-1]["verify"] == "fail"
