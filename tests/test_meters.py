@@ -87,3 +87,17 @@ def test_m3_counts_live_nonzero_deltas_and_names_the_unowned():
 
 def test_m3_is_zero_when_every_card_absorbed_the_process():
     assert compute_m3([card(state="build")])["live_deltas"] == 0
+
+
+def test_m1_ignores_verify_entries_that_share_a_state_name():
+    c = card(state="commit", decider="Priya", history=[
+        {"state": "contest", "at": "2026-08-01T09:00:00+00:00", "by": "x"},
+        {"state": "commit", "at": "2026-08-02T09:00:00+00:00", "by": "x"},
+        {"state": "commit", "at": "2026-08-03T09:00:00+00:00", "by": "ci", "verify": "pass"},
+    ])
+    assert compute_m1([c], now=NOW)["median_hours"] == 24.0
+
+
+def test_m2_does_not_flag_a_card_with_no_verify_history():
+    c = card(id="C-0001", state="commit")   # has an eval, empty history
+    assert compute_m2([c])["never_red"] == []
