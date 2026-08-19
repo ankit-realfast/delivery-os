@@ -9,7 +9,7 @@ from pathlib import Path
 
 from delivery_os.card import load_all, load_card, write_card
 from delivery_os.gh import PR_EVENTS, card_ids_in_paths, load_deciders, transition_for
-from delivery_os.lint import lint_card
+from delivery_os.lint import lint_card, lint_corpus
 from delivery_os.machine import IllegalTransition, move_card, record_verify
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
 
@@ -156,10 +156,16 @@ def main(argv=None) -> int:
         print(new_card(args.root, args.engagement, args.title, args.tier, args.parent))
         return 0
 
-    cards = load_all(args.root)
+    try:
+        cards = load_all(args.root)
+    except (ValueError, OSError) as exc:
+        # A malformed card must not take down the command with a traceback.
+        # In card-sync that fails the job with no diagnosis (deferred #7).
+        print(f"cannot load the card corpus: {exc}", file=sys.stderr)
+        return 2
 
     if args.cmd == "lint":
-        findings = [f for c in cards for f in lint_card(c)]
+        findings = [f for c in cards for f in lint_card(c)] + lint_corpus(cards)
         for f in findings:
             print(f"{f.card_id}  {f.rule}: {f.message}")
         return 1 if findings else 0

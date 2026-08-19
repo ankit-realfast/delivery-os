@@ -145,3 +145,16 @@ def test_dump_round_trips_through_the_loader(repo):
               "kill_criterion", "observation_date", "touches_production_data",
               "history", "intent"):
         assert getattr(reloaded, f) == getattr(original, f), f
+
+
+def test_a_malformed_card_is_a_clean_error_not_a_traceback(repo, capsys):
+    cards = repo / "cards"
+    cards.mkdir()
+    (cards / "C-0001.md").write_text(
+        "---\nid: C-0001\ntitle: t\ntier: T1\nstate: draft\nstory_points: 5\n---\nB\n",
+        encoding="utf-8")
+    assert main(["--root", "cards", "lint"]) == 2
+    err = capsys.readouterr().err
+    assert "cannot load the card corpus" in err
+    assert "story_points" in err
+    assert "Traceback" not in err
