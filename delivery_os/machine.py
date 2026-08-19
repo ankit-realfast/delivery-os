@@ -18,6 +18,13 @@ LEGAL_TRANSITIONS: dict[str, list[str]] = {
 }
 
 
+# History keys that annotate a card in place rather than record a state
+# change. M1 must not read these as transitions: an observation recorded
+# while a card sits at `commit` would otherwise overwrite the commit
+# timestamp and inflate decision latency.
+ANNOTATION_KEYS = ("verify", "observed")
+
+
 class IllegalTransition(Exception):
     pass
 
@@ -44,3 +51,26 @@ def record_verify(card: Card, passed: bool, by: str, now: datetime) -> Card:
         "verify": "pass" if passed else "fail",
     }
     return dataclasses.replace(card, history=[*card.history, entry])
+
+
+def record_observation(
+    card: Card, value_moved: bool, delta_held: bool, by: str, now: datetime
+) -> Card:
+    """Answer the two observation-date questions against what the card claimed.
+
+    Spec 4: "On that date, two questions are answered against what the card
+    claimed: did the value line move, and was the behaviour delta what was
+    declared?" value_moved feeds the scoreboard; delta_held is what makes
+    M3's stated guard implementable.
+    """
+    entry = {
+        "state": card.state,
+        "at": now.isoformat(),
+        "by": by,
+        "observed": "moved" if value_moved else "not-moved",
+        "delta": "held" if delta_held else "broken",
+    }
+    return dataclasses.replace(
+        card, value_moved=value_moved, delta_held=delta_held,
+        history=[*card.history, entry],
+    )

@@ -5,10 +5,13 @@ from statistics import median
 
 from delivery_os.card import Card, state_at_least
 from delivery_os.lint import effective_tier
+from delivery_os.machine import ANNOTATION_KEYS
 
 
 def _last_entry_at(card: Card, state: str) -> datetime | None:
-    stamps = [h["at"] for h in card.history if h.get("state") == state and "verify" not in h]
+    stamps = [h["at"] for h in card.history
+              if h.get("state") == state
+              and not any(k in h for k in ANNOTATION_KEYS)]
     return datetime.fromisoformat(stamps[-1]) if stamps else None
 
 
@@ -88,10 +91,15 @@ def compute_m2(cards: list[Card]) -> dict:
 def compute_m3(cards: list[Card]) -> dict:
     live = [c for c in cards if c.state != "closed" and c.behaviour_delta != "none"]
     unowned = [c.id for c in live if not c.delta_owner]
+    # Spec 5's M3 guard: M3 is gamed by declaring "none" falsely, and "the
+    # observation date checks the claim against reality". A card whose
+    # observed delta did not hold is that check firing.
+    disproved = sorted(c.id for c in cards if c.delta_held is False)
     return {
         "headline": len(live),
         "live_deltas": len(live),
         "unowned": sorted(unowned),
+        "disproved": disproved,
     }
 
 

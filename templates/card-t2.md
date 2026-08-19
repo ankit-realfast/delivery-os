@@ -17,6 +17,7 @@ touches_auth: false
 external_commitment: false
 flag_off: true
 value_moved: null
+delta_held: null
 history: []
 ---
 {title}

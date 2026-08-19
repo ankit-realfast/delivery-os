@@ -48,6 +48,10 @@ class Card:
     external_commitment: bool = False
     flag_off: bool = True
     value_moved: bool | None = None
+    # Did the declared behaviour delta hold? Spec 5's M3 guard:
+    # "Declaring 'none' falsely -> the observation date checks the
+    # claim against reality." None until observed.
+    delta_held: bool | None = None
     history: list[dict] = field(default_factory=list)
     intent: str = ""
     # Which keys the author actually wrote. Loader-owned; lets dump_card
@@ -80,7 +84,7 @@ _TEXT_FIELDS = {
 }
 _BOOL_FIELDS = {
     "touches_production_data", "touches_auth", "external_commitment",
-    "flag_off", "value_moved",
+    "flag_off", "value_moved", "delta_held",
 }
 _REQUIRED = ("id", "title", "tier", "state")
 

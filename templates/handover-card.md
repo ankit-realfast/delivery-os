@@ -17,6 +17,7 @@ touches_auth: false
 external_commitment: true
 flag_off: false
 value_moved: null
+delta_held: null
 history: []
 ---
 The full card corpus and eval suite run green in {client}'s own CI, executed by

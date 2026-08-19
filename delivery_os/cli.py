@@ -10,7 +10,9 @@ from pathlib import Path
 from delivery_os.card import load_all, load_card, write_card
 from delivery_os.gh import PR_EVENTS, card_ids_in_paths, load_deciders, transition_for
 from delivery_os.lint import lint_card, lint_corpus
-from delivery_os.machine import IllegalTransition, move_card, record_verify
+from delivery_os.machine import (
+    IllegalTransition, move_card, record_observation, record_verify,
+)
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -55,7 +57,8 @@ def render_report(cards, now: datetime, today: date) -> str:
         f"   proven {m2['proven_fallible']}/{m2['in_scope']}"
         f"   never-run {len(m2['never_run'])}   never-red {len(m2['never_red'])}"
         f"   no-eval {len(m2['without_eval'])}",
-        f"M3 behaviour-delta debt  live {m3['live_deltas']}   unowned {len(m3['unowned'])}",
+        f"M3 behaviour-delta debt  live {m3['live_deltas']}"
+        f"   unowned {len(m3['unowned'])}   delta claim disproved {len(m3['disproved'])}",
         "",
         f"SCOREBOARD  value lines moved {sb['headline']}   unrecorded {len(sb['unrecorded'])}",
     ]
@@ -143,6 +146,22 @@ def main(argv=None) -> int:
     p_verify = sub.add_parser("verify")
     p_verify.add_argument("card_id")
 
+    # Spec 4: "Cards close at Observe, not at Verify ... the rule the system
+    # will most try to skip, and the one that decides whether value can be
+    # proved at renewal." value_moved was read by the scoreboard and written
+    # by nothing at all. Both answers are required: the observation date asks
+    # two questions, and answering only the flattering one is the gaming
+    # vector spec 5 names for M3.
+    p_obs = sub.add_parser("observe")
+    p_obs.add_argument("card_id")
+    p_obs.add_argument("--by", required=True)
+    g_moved = p_obs.add_mutually_exclusive_group(required=True)
+    g_moved.add_argument("--moved", dest="value_moved", action="store_true")
+    g_moved.add_argument("--not-moved", dest="value_moved", action="store_false")
+    g_delta = p_obs.add_mutually_exclusive_group(required=True)
+    g_delta.add_argument("--delta-held", dest="delta_held", action="store_true")
+    g_delta.add_argument("--delta-broken", dest="delta_held", action="store_false")
+
     p_sync = sub.add_parser("sync-pr")
     p_sync.add_argument("--changed", required=True, help="newline- or comma-separated paths")
     p_sync.add_argument("--approvers", default="", help="comma-separated GitHub handles")
@@ -210,6 +229,27 @@ def main(argv=None) -> int:
         if outcome == "fail":
             print(out)
         return 0 if outcome == "pass" else 1
+
+    if args.cmd == "observe":
+        card = _find(cards, args.card_id, args.root)
+        if card is None:
+            return 2
+        today = date.today()
+        if card.observation_date is None:
+            print(f"{card.id}: no observation_date on this card; recording anyway",
+                  file=sys.stderr)
+        elif card.observation_date > today:
+            print(f"{card.id}: observation_date is {card.observation_date}, "
+                  f"{(card.observation_date - today).days} days away; recording early",
+                  file=sys.stderr)
+        observed = record_observation(
+            card, value_moved=args.value_moved, delta_held=args.delta_held,
+            by=args.by, now=datetime.now(timezone.utc))
+        write_card(observed)
+        print(f"{card.id} observed  value line "
+              f"{'moved' if args.value_moved else 'did not move'}  "
+              f"behaviour delta {'held' if args.delta_held else 'did not hold'}")
+        return 0
 
     if args.cmd == "sync-pr":
         changed = [p for p in re.split(r"[,\n]", args.changed) if p.strip()]
