@@ -43,4 +43,7 @@ def test_t1_cards_never_enter_the_scoreboard():
     inherited = Card(id="C-0009", title="t", tier="T1", state="observe",
                      parent="C-0001", eval="evals/x_test.py::test_x",
                      observation_date=date(2026, 9, 1), value_moved=True, intent="x")
-    assert compute_scoreboard([inherited], today=TODAY)["due"] == []
+    sb = compute_scoreboard([inherited], today=TODAY)
+    assert sb["due"] == []
+    assert sb["moved"] == []
+    assert sb["headline"] is None
