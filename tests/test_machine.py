@@ -78,3 +78,26 @@ def test_t1_fast_path_does_not_leak_past_draft():
     # "commit" is not already legal, or a leak is invisible.
     with pytest.raises(IllegalTransition, match="build -> commit"):
         move_card(card("build", tier="T1"), "commit", by="akp", now=NOW)
+
+
+def test_under_tiered_card_cannot_use_the_t1_fast_path():
+    # C4: the card claims T1 but touches auth, so it derives T2 and must
+    # pass through contest. Authoring cannot buy the fast lane.
+    with pytest.raises(IllegalTransition, match="draft -> commit"):
+        move_card(card("draft", tier="T1", touches_auth=True), "commit", by="akp", now=NOW)
+
+
+def test_orphan_card_claiming_t1_cannot_use_the_fast_path():
+    with pytest.raises(IllegalTransition, match="draft -> commit"):
+        move_card(card("draft", tier="T1", parent=None), "commit", by="akp", now=NOW)
+
+
+def test_unrecognised_tier_does_not_get_the_fast_path():
+    # I9: fail closed. An unknown tier is not a licence for the fast lane.
+    with pytest.raises(IllegalTransition, match="draft -> commit"):
+        move_card(card("draft", tier="t1"), "commit", by="akp", now=NOW)
+
+
+def test_genuinely_reversible_t1_card_keeps_the_fast_path():
+    # The fix must not close the fast lane on the cards it exists for.
+    assert move_card(card("draft", tier="T1"), "commit", by="akp", now=NOW).state == "commit"

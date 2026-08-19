@@ -71,10 +71,39 @@ def test_unknown_state_is_rejected():
     assert "bad-state" in rules(lint_card(t1(state="in_progress")))
 
 
-def test_t1_missing_parent_is_rejected():
+def test_t1_missing_parent_is_escalated_to_t2_not_asked_for_a_parent():
+    # DELIBERATE UPDATE. Spec rule 2: "A card with no parent is T2 by
+    # definition." So a parentless card is not a T1 missing a field -- it is
+    # a T2, and T2 cards have no parent. Demanding `parent` of it was the old
+    # authored-tier model leaking through. What must fire is tier-escalation
+    # plus the T2 field set.
     findings = lint_card(t1(parent=None))
-    # After Task 3 changes, a T1 card with no parent produces two findings:
-    # - missing-field for the absent parent (T1 requires parent)
-    # - tier-escalation because the orphan trigger fires
-    # We assert that the missing-field is present.
-    assert any("parent" in f.message for f in findings if f.rule == "missing-field")
+    escalation = next(f for f in findings if f.rule == "tier-escalation")
+    assert "no parent" in escalation.message
+    missing = {f.message for f in findings if f.rule == "missing-field"}
+    assert any("decider" in m for m in missing)
+    assert all(m.startswith("T2 card") for m in missing)
+
+
+def test_under_tiered_auth_card_is_linted_against_the_t2_field_set():
+    # C4: tier is derived, never authored. Authoring `tier: T1` on an
+    # auth-touching card must not buy the T1 (three-field) lint.
+    findings = lint_card(t1(touches_auth=True))
+    assert "tier-escalation" in rules(findings)
+    missing = {f.message for f in findings if f.rule == "missing-field"}
+    assert any("kill_criterion" in m for m in missing)
+
+
+def test_over_tiering_still_gets_the_strict_field_set():
+    # Authoring may escalate; effective_tier honours it.
+    findings = lint_card(t1(tier="T2"))
+    assert "tier-escalation" not in rules(findings)
+    assert any("kill_criterion" in f.message for f in findings if f.rule == "missing-field")
+
+
+def test_unrecognised_tier_is_a_finding_and_routes_to_the_strict_lane():
+    # I9: lint used to treat an unknown tier as T1, gh as T2, and the
+    # scoreboard silently excluded it.
+    findings = lint_card(t1(tier="t2"))
+    assert "bad-tier" in rules(findings)
+    assert any("kill_criterion" in f.message for f in findings if f.rule == "missing-field")

@@ -77,3 +77,29 @@ def test_t1_card_is_not_dragged_into_contest_by_an_open_pr():
 
 def test_card_already_past_commit_is_left_alone():
     assert transition_for(card(state="build"), merged=True, approvers=["priya-r"], deciders=DECIDERS) is None
+
+
+def test_under_tiered_auth_card_cannot_reach_commit_without_the_decider():
+    # C4, the proven routing-around: authored `tier: T1`, derives T2 via the
+    # auth trigger, lints with a tier-escalation finding -- and still
+    # committed on merge with no approvers and no named Decider.
+    # decider_approved never failed open; the caller simply never asked it.
+    under_tiered = card(id="C-0009", tier="T1", state="draft", parent="C-0001",
+                        touches_auth=True, decider=None)
+    assert transition_for(under_tiered, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+
+
+def test_orphan_card_claiming_t1_cannot_reach_commit_on_merge():
+    orphan = card(id="C-0010", tier="T1", state="draft", parent=None, decider=None)
+    assert transition_for(orphan, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+
+
+def test_unflaggable_card_claiming_t1_cannot_reach_commit_on_merge():
+    c = card(id="C-0011", tier="T1", state="draft", parent="C-0001",
+             flag_off=False, decider=None)
+    assert transition_for(c, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+
+
+def test_genuinely_reversible_t1_card_still_commits_on_merge():
+    t1 = card(id="C-0012", tier="T1", state="draft", parent="C-0007", decider=None)
+    assert transition_for(t1, merged=True, approvers=[], deciders=DECIDERS) == "commit"

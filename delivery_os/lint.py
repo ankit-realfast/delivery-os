@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from delivery_os.card import Card, STATES
+from delivery_os.card import Card, STATES, state_at_least
+
+TIERS = ("T1", "T2")
 
 T1_REQUIRED = ["intent", "eval", "parent"]
 T2_REQUIRED = [
@@ -21,7 +23,26 @@ T2_TRIGGERS = [
 
 
 def required_tier(card: Card) -> str:
+    """The tier the trigger test derives (spec 4). Ignores what was authored."""
     return "T2" if any(pred(card) for _, pred, _ in T2_TRIGGERS) else "T1"
+
+
+def effective_tier(card: Card) -> str:
+    """The tier that actually governs the card. The one tier every caller uses.
+
+    Spec 3/4: "Tier is derived by the trigger test, never authored." So:
+
+    - Authoring can never de-escalate. A card that derives T2 is T2 whatever
+      the frontmatter claims; otherwise authoring `tier: T1` on an
+      auth-touching card routes around the OS's only governance gate.
+    - Authoring may escalate. Over-tiering is a voluntary choice of the
+      stricter lane and is honoured (lint permits it).
+    - An unrecognised tier string is treated as T2. An unknown tier is not a
+      licence for the fast lane; fail closed.
+    """
+    if card.tier not in TIERS:
+        return "T2"
+    return "T2" if required_tier(card) == "T2" else card.tier
 
 
 @dataclass(frozen=True)
@@ -37,6 +58,13 @@ def lint_card(card: Card) -> list[Finding]:
     if card.state not in STATES:
         findings.append(Finding(card.id, "bad-state", f"unknown state '{card.state}'"))
 
+    if card.tier not in TIERS:
+        findings.append(
+            Finding(card.id, "bad-tier",
+                    f"unknown tier '{card.tier}' (expected one of {', '.join(TIERS)}); "
+                    "treated as T2")
+        )
+
     if required_tier(card) == "T2" and card.tier != "T2":
         reasons = "; ".join(msg for _, pred, msg in T2_TRIGGERS if pred(card))
         findings.append(Finding(card.id, "tier-escalation", f"must be T2: {reasons}"))
@@ -46,11 +74,12 @@ def lint_card(card: Card) -> list[Finding]:
             Finding(card.id, "unowned-delta", "non-zero behaviour delta requires delta_owner")
         )
 
-    required = T2_REQUIRED if card.tier == "T2" else T1_REQUIRED
+    tier = effective_tier(card)
+    required = T2_REQUIRED if tier == "T2" else T1_REQUIRED
     for name in required:
         if not getattr(card, name, None):
             findings.append(
-                Finding(card.id, "missing-field", f"{card.tier} card requires '{name}'")
+                Finding(card.id, "missing-field", f"{tier} card requires '{name}'")
             )
 
     return findings

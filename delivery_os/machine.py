@@ -4,6 +4,7 @@ import dataclasses
 from datetime import datetime
 
 from delivery_os.card import Card
+from delivery_os.lint import effective_tier
 
 LEGAL_TRANSITIONS: dict[str, list[str]] = {
     "draft": ["contest"],
@@ -23,8 +24,10 @@ class IllegalTransition(Exception):
 
 def move_card(card: Card, to_state: str, by: str, now: datetime) -> Card:
     legal = list(LEGAL_TRANSITIONS.get(card.state, []))
-    if card.tier == "T1" and card.state == "draft":
-        legal.append("commit")  # spec 4: T1 has no contest
+    # spec 4: T1 has no contest. Tier is *derived*, never authored -- an
+    # under-tiered card must not buy the fast lane by claiming `tier: T1`.
+    if effective_tier(card) == "T1" and card.state == "draft":
+        legal.append("commit")
     if to_state not in legal:
         raise IllegalTransition(f"{card.state} -> {to_state}")
     entry = {"state": to_state, "at": now.isoformat(), "by": by}

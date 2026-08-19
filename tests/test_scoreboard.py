@@ -47,3 +47,18 @@ def test_t1_cards_never_enter_the_scoreboard():
     assert sb["due"] == []
     assert sb["moved"] == []
     assert sb["headline"] is None
+
+
+def test_card_with_an_unrecognised_tier_still_reaches_the_scoreboard():
+    # I9: a T2 card typed `t2` used to vanish from the client-facing
+    # scoreboard with no error at all.
+    sb = compute_scoreboard([t2(tier="t2", value_moved=True)], today=TODAY)
+    assert sb["due"] == ["C-0001"]
+    assert sb["headline"] == 1.0
+
+
+def test_under_tiered_card_still_reaches_the_scoreboard():
+    # Derived tier: no parent means T2 by definition (spec rule 2).
+    sb = compute_scoreboard([t2(tier="T1", value_moved=False)], today=TODAY)
+    assert sb["due"] == ["C-0001"]
+    assert sb["not_moved"] == ["C-0001"]

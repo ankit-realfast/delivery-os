@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from delivery_os.card import Card
+from delivery_os.lint import effective_tier
 
 CARD_RE = re.compile(r"(C-\d{4})")
 
@@ -39,7 +40,9 @@ def transition_for(
         return None
 
     # T1 has no contest. An open PR does not move it; a merge commits it.
-    if card.tier == "T1":
+    # Derived tier, never authored (spec 3/4): a card claiming `tier: T1`
+    # while touching auth is T2 and must face the Decider.
+    if effective_tier(card) == "T1":
         return "commit" if merged and card.state == "draft" else None
 
     if not merged:

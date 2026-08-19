@@ -4,6 +4,7 @@ from datetime import date, datetime
 from statistics import median
 
 from delivery_os.card import Card, state_at_least
+from delivery_os.lint import effective_tier
 
 
 def _last_entry_at(card: Card, state: str) -> datetime | None:
@@ -97,7 +98,7 @@ def compute_m3(cards: list[Card]) -> dict:
 def compute_scoreboard(cards: list[Card], today: date) -> dict:
     due = [
         c for c in cards
-        if c.tier == "T2" and c.observation_date and c.observation_date <= today
+        if effective_tier(c) == "T2" and c.observation_date and c.observation_date <= today
     ]
     recorded = [c for c in due if c.value_moved is not None]
     moved = [c.id for c in recorded if c.value_moved]
