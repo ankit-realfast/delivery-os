@@ -61,20 +61,26 @@ def render_report(cards, now: datetime, today: date) -> str:
     return "\n".join(lines)
 
 
-def verify_card(card, root=".") -> tuple[bool, str]:
-    """Run a card's acceptance eval. Returns (passed, output)."""
+def verify_card(card, repo_root=".") -> tuple[bool, str]:
+    """Run a card's acceptance eval. Returns (passed, output).
+
+    `card.eval` is a pytest node id relative to the REPOSITORY root
+    (e.g. "evals/C-0001_test.py::test_x"), not to --root. --root locates
+    the card corpus; it is deliberately not threaded through here.
+    """
     if not card.eval:
         return False, "card has no eval"
     result = subprocess.run(
         [sys.executable, "-m", "pytest", card.eval, "-q"],
-        capture_output=True, text=True, cwd=root,
+        capture_output=True, text=True, cwd=repo_root,
     )
     return result.returncode == 0, result.stdout
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="dos")
-    parser.add_argument("--root", default="cards")
+    parser.add_argument("--root", default="cards",
+                        help="directory holding the card corpus (not used to resolve evals)")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_new = sub.add_parser("new")

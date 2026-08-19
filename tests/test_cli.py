@@ -53,7 +53,7 @@ def test_verify_card_passes_and_records_pass_in_history(tmp_path):
         id="C-0001", title="t", tier="T1", state="verify",
         parent="C-0000", eval="evals/test_ok.py::test_ok",
     )
-    passed, output = verify_card(card, root=tmp_path)
+    passed, output = verify_card(card, repo_root=tmp_path)
     assert passed is True
     updated = record_verify(card, passed=passed, by="ci", now=NOW)
     assert updated.history[-1]["verify"] == "pass"
@@ -69,7 +69,7 @@ def test_verify_card_fails_and_records_fail_in_history(tmp_path):
         id="C-0002", title="t", tier="T1", state="verify",
         parent="C-0000", eval="evals/test_bad.py::test_bad",
     )
-    passed, output = verify_card(card, root=tmp_path)
+    passed, output = verify_card(card, repo_root=tmp_path)
     assert passed is False
     updated = record_verify(card, passed=passed, by="ci", now=NOW)
     assert updated.history[-1]["verify"] == "fail"
