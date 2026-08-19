@@ -64,3 +64,17 @@ def test_record_verify_writes_pass_into_history():
 def test_record_verify_writes_fail_into_history():
     c = record_verify(card("verify"), passed=False, by="ci", now=NOW)
     assert c.history[-1]["verify"] == "fail"
+
+
+def test_record_verify_does_not_mutate_the_original():
+    original = card("verify")
+    record_verify(original, passed=True, by="ci", now=NOW)
+    assert original.state == "verify"
+    assert original.history == []
+
+
+def test_t1_fast_path_does_not_leak_past_draft():
+    # The T1 no-contest fast path only applies when card.tier == "T1" and card.state == "draft".
+    # If a T1 card is in contest state, it should follow normal transitions and not skip ahead.
+    with pytest.raises(IllegalTransition, match="contest -> build"):
+        move_card(card("contest", tier="T1"), "build", by="akp", now=NOW)
