@@ -18,7 +18,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          # C3: card state must be READ from the ref that actually holds the
+          # card. A card ADDED on the PR branch does not exist on the base
+          # ref, so the corpus loaded empty, by_id.get(id) was None, and the
+          # draft->contest write silently never happened.
+          #
+          # merged  -> base.ref: the card is now on base, and base is also
+          #            where the state write must land. (head.ref may already
+          #            be deleted; head.sha would be a detached HEAD that the
+          #            "Commit state changes" step below cannot push.)
+          # open    -> head.ref: the card exists only on the PR branch, which
+          #            is also where its state write belongs.
+          ref: >-
+            ${{ github.event.pull_request.merged
+                && github.event.pull_request.base.ref
+                || github.event.pull_request.head.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

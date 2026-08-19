@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from delivery_os.card import load_card
+from datetime import datetime, timezone
+
+from delivery_os.card import load_all, load_card
+from delivery_os.meters import compute_m1
 from delivery_os.cli import main
 
 T2_DRAFT = """---
@@ -118,3 +121,28 @@ def test_an_invalid_pr_state_is_refused(repo):
     with pytest.raises(SystemExit):
         main(["--root", "cards", "sync-pr", "--changed", CHANGED,
               "--pr-state", "closed", "--deciders", "deciders.yml"])
+
+
+def test_card_created_and_merged_in_one_pr_becomes_visible_to_m1(repo, capsys):
+    # C3 end to end. A T2 card created and merged in a single PR used to
+    # carry no contest history ever and was permanently invisible to
+    # compute_m1 -- the meter Schedule A makes contractual.
+    assert _sync("merged", approvers="priya-r") == 0
+    assert _state(repo, "C-0001-webhooks.md") == "contest"
+    m1 = compute_m1(load_all(repo / "cards"), now=datetime(2027, 1, 1, tzinfo=timezone.utc))
+    assert [o["id"] for o in m1["open"]] == ["C-0001"]
+    assert m1["open"][0]["decider"] == "Priya Raman"
+
+
+def test_t1_card_created_and_merged_in_one_pr_reaches_commit(repo):
+    assert _sync("merged") == 0
+    assert _state(repo, "C-0002-retry.md") == "commit"
+
+
+def test_changed_card_absent_from_the_corpus_is_reported_not_silent(repo, capsys):
+    # Deferred #10: this silence is what concealed C3.
+    main(["--root", "cards", "sync-pr", "--changed", "cards/acme/C-0404-ghost.md",
+          "--pr-state", "open", "--deciders", "deciders.yml"])
+    out = capsys.readouterr().out
+    assert "C-0404" in out
+    assert "not found" in out

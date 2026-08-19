@@ -194,6 +194,11 @@ def main(argv=None) -> int:
         for card_id in wanted:
             card = by_id.get(card_id)
             if card is None:
+                # Never silent: this silence is what concealed C3 for eleven
+                # reviews. A changed path naming a card that is not in the
+                # corpus means the corpus was read from the wrong ref, the
+                # file is not a card, or the id and filename disagree.
+                print(f"{card_id}  not found under {args.root} (no state written)")
                 continue
             target = transition_for(card, args.pr_state, approvers, deciders)
             if target is None:

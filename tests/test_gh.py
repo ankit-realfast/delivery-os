@@ -137,3 +137,23 @@ def test_unknown_pr_event_is_refused_not_guessed():
     with pytest.raises(ValueError, match="unknown PR event"):
         transition_for(card(state="draft"), event="closed",
                        approvers=[], deciders=DECIDERS)
+
+
+def test_merged_pr_contests_a_t2_card_introduced_by_that_same_pr():
+    # C3: the card was ADDED on the PR branch, so no earlier event ever saw
+    # it and it is still `draft` at merge. Returning None here left it with
+    # no contest history ever, permanently invisible to compute_m1.
+    assert transition_for(card(state="draft"), event="merged",
+                          approvers=[], deciders=DECIDERS) == "contest"
+
+
+def test_merged_pr_does_not_let_a_t2_draft_skip_contest_even_with_approval():
+    # Spec 4: T2 goes draft -> contest -> commit. A zero-length contest
+    # recorded by the supplier's own workflow would make M1 read zero.
+    assert transition_for(card(state="draft"), event="merged",
+                          approvers=["priya-r"], deciders=DECIDERS) == "contest"
+
+
+def test_merged_pr_commits_a_t1_card_introduced_by_that_same_pr():
+    t1 = card(id="C-0008", tier="T1", state="draft", parent="C-0007", decider=None)
+    assert transition_for(t1, event="merged", approvers=[], deciders=DECIDERS) == "commit"

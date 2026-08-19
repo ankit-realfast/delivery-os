@@ -76,6 +76,22 @@ def transition_for(
     if event == "open":
         return "contest" if card.state == "draft" else None
 
+    # event == "merged".
+    if card.state == "draft":
+        # C3: a T2 card ADDED by this PR is still `draft` when the PR merges,
+        # because no earlier event ever saw it. Falling through to None left
+        # it with no contest history ever, permanently invisible to
+        # compute_m1 -- the meter Schedule A makes contractual.
+        #
+        # It becomes "contest", not "commit". Spec 4 puts contest between
+        # draft and commit for T2 and machine.LEGAL_TRANSITIONS refuses
+        # draft -> commit, so a T2 card may not reach commit without a
+        # recorded contest. Committing here even when the Decider approved
+        # the PR would record a zero-length contest and let the supplier
+        # make its own contractual meter read zero -- the anti-pattern C5
+        # exists to prevent. The Decider commits it explicitly.
+        return "contest"
+
     if card.state == "contest" and decider_approved(card, approvers, deciders):
         return "commit"
     return None
