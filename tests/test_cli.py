@@ -18,6 +18,19 @@ def test_next_card_id_increments_past_the_highest(tmp_path):
     assert next_card_id(tmp_path) == "C-0003"
 
 
+def test_next_card_id_uses_highest_id_not_file_count(tmp_path):
+    # A naive len(ids) + 1 count would give the same answer as max(ids) + 1
+    # while ids are contiguous, so it can't be told apart from that test
+    # above. Delete the middle card to open a gap: a count-based
+    # implementation would now collide with C-0003 (2 files -> "C-0003"),
+    # while max(ids) + 1 correctly still returns "C-0004".
+    new_card(tmp_path, "acme", "first thing", tier="T2", parent=None)
+    second_path = new_card(tmp_path, "acme", "second thing", tier="T1", parent="C-0001")
+    new_card(tmp_path, "acme", "third thing", tier="T1", parent="C-0001")
+    second_path.unlink()
+    assert next_card_id(tmp_path) == "C-0004"
+
+
 def test_new_t1_card_is_three_authored_fields(tmp_path):
     path = new_card(tmp_path, "acme", "retry webhooks", tier="T1", parent="C-0001")
     card = load_card(path)
@@ -26,6 +39,17 @@ def test_new_t1_card_is_three_authored_fields(tmp_path):
     assert card.state == "draft"
     assert card.eval is None
     assert path.name == "C-0001-retry-webhooks.md"
+
+
+def test_new_card_title_round_trips_quotes_and_backslashes(tmp_path):
+    # The title sits inside a double-quoted YAML scalar, where both '"' and
+    # '\' are escape-significant. The assertion that matters is not "it
+    # didn't crash" -- it's that the exact original characters come back
+    # out of load_card, not some lossy stand-in (e.g. '"' silently turned
+    # into "'").
+    hostile_title = r'Fix "quick win" bug \ in the parser'
+    path = new_card(tmp_path, "acme", hostile_title, tier="T1", parent="C-0001")
+    assert load_card(path).title == hostile_title
 
 
 def test_new_orphan_card_is_written_as_t2(tmp_path):
