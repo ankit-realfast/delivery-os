@@ -54,29 +54,29 @@ def test_unknown_handle_is_ignored_not_trusted():
 
 
 def test_open_pr_moves_a_t2_draft_into_contest():
-    assert transition_for(card(state="draft"), merged=False, approvers=[], deciders=DECIDERS) == "contest"
+    assert transition_for(card(state="draft"), event="open", approvers=[], deciders=DECIDERS) == "contest"
 
 
 def test_merged_pr_with_decider_approval_commits_a_t2_card():
-    assert transition_for(card(), merged=True, approvers=["priya-r"], deciders=DECIDERS) == "commit"
+    assert transition_for(card(), event="merged", approvers=["priya-r"], deciders=DECIDERS) == "commit"
 
 
 def test_merged_pr_without_decider_approval_does_not_commit():
-    assert transition_for(card(), merged=True, approvers=["sam-k"], deciders=DECIDERS) is None
+    assert transition_for(card(), event="merged", approvers=["sam-k"], deciders=DECIDERS) is None
 
 
 def test_t1_card_commits_on_merge_with_no_approval_needed():
     t1 = card(id="C-0008", tier="T1", state="draft", parent="C-0007", decider=None)
-    assert transition_for(t1, merged=True, approvers=[], deciders=DECIDERS) == "commit"
+    assert transition_for(t1, event="merged", approvers=[], deciders=DECIDERS) == "commit"
 
 
 def test_t1_card_is_not_dragged_into_contest_by_an_open_pr():
     t1 = card(id="C-0008", tier="T1", state="draft", parent="C-0007", decider=None)
-    assert transition_for(t1, merged=False, approvers=[], deciders=DECIDERS) is None
+    assert transition_for(t1, event="open", approvers=[], deciders=DECIDERS) is None
 
 
 def test_card_already_past_commit_is_left_alone():
-    assert transition_for(card(state="build"), merged=True, approvers=["priya-r"], deciders=DECIDERS) is None
+    assert transition_for(card(state="build"), event="merged", approvers=["priya-r"], deciders=DECIDERS) is None
 
 
 def test_under_tiered_auth_card_cannot_reach_commit_without_the_decider():
@@ -86,20 +86,54 @@ def test_under_tiered_auth_card_cannot_reach_commit_without_the_decider():
     # decider_approved never failed open; the caller simply never asked it.
     under_tiered = card(id="C-0009", tier="T1", state="draft", parent="C-0001",
                         touches_auth=True, decider=None)
-    assert transition_for(under_tiered, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+    assert transition_for(under_tiered, event="merged", approvers=[], deciders=DECIDERS) != "commit"
 
 
 def test_orphan_card_claiming_t1_cannot_reach_commit_on_merge():
     orphan = card(id="C-0010", tier="T1", state="draft", parent=None, decider=None)
-    assert transition_for(orphan, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+    assert transition_for(orphan, event="merged", approvers=[], deciders=DECIDERS) != "commit"
 
 
 def test_unflaggable_card_claiming_t1_cannot_reach_commit_on_merge():
     c = card(id="C-0011", tier="T1", state="draft", parent="C-0001",
              flag_off=False, decider=None)
-    assert transition_for(c, merged=True, approvers=[], deciders=DECIDERS) != "commit"
+    assert transition_for(c, event="merged", approvers=[], deciders=DECIDERS) != "commit"
 
 
 def test_genuinely_reversible_t1_card_still_commits_on_merge():
     t1 = card(id="C-0012", tier="T1", state="draft", parent="C-0007", decider=None)
-    assert transition_for(t1, merged=True, approvers=[], deciders=DECIDERS) == "commit"
+    assert transition_for(t1, event="merged", approvers=[], deciders=DECIDERS) == "commit"
+
+
+def test_abandoned_pr_does_not_drag_a_draft_into_contest():
+    # C5: `closed` fires for merge AND for abandonment. With a merged flag,
+    # an abandoned PR looked exactly like an open one, so a throwaway PR
+    # touching a card file started an unbounded M1 clock against a named
+    # client-side individual for a decision never put to them.
+    assert transition_for(card(state="draft"), event="abandoned",
+                          approvers=[], deciders=DECIDERS) is None
+
+
+def test_abandoned_pr_does_not_commit_an_approved_contest_card():
+    assert transition_for(card(state="contest"), event="abandoned",
+                          approvers=["priya-r"], deciders=DECIDERS) is None
+
+
+def test_abandoned_pr_does_not_commit_a_t1_draft():
+    t1 = card(id="C-0008", tier="T1", state="draft", parent="C-0007", decider=None)
+    assert transition_for(t1, event="abandoned", approvers=[], deciders=DECIDERS) is None
+
+
+def test_abandoned_never_reverses_an_existing_contest():
+    # Explicitly NOT contest -> draft. transition_for cannot know which PR
+    # moved this card to contest; reversing would let any throwaway PR erase
+    # genuine client decision latency from a contractual meter.
+    assert transition_for(card(state="contest"), event="abandoned",
+                          approvers=[], deciders=DECIDERS) is None
+
+
+def test_unknown_pr_event_is_refused_not_guessed():
+    import pytest
+    with pytest.raises(ValueError, match="unknown PR event"):
+        transition_for(card(state="draft"), event="closed",
+                       approvers=[], deciders=DECIDERS)

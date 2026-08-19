@@ -9,6 +9,11 @@ permissions:
 
 jobs:
   sync:
+    # Defence in depth for C5. The real guard is transition_for's three-valued
+    # `event` domain, which is reachable by the test suite; this only stops an
+    # abandoned PR from starting the job at all. `closed` fires for merge and
+    # for abandonment alike, so the merged flag must be consulted.
+    if: github.event.action != 'closed' || github.event.pull_request.merged
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +43,17 @@ jobs:
           echo "list=$(cat approvers.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Advance cards
+        env:
+          # Three-valued, because `closed` cannot tell merge from abandonment.
+          PR_STATE: >-
+            ${{ github.event.action == 'closed'
+                && (github.event.pull_request.merged && 'merged' || 'abandoned')
+                || 'open' }}
         run: |
           python -m delivery_os.cli --root cards sync-pr \
             --changed "$(cat changed.txt)" \
             --approvers "${{ steps.approvers.outputs.list }}" \
-            ${{ github.event.pull_request.merged && '--merged' || '' }}
+            --pr-state "$PR_STATE"
 
       - name: Commit state changes
         run: |

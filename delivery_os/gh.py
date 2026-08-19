@@ -33,9 +33,37 @@ def decider_approved(card: Card, approvers: list[str], deciders: dict[str, str])
     return any(deciders.get(handle) == card.decider for handle in approvers)
 
 
+PR_EVENTS = ("open", "merged", "abandoned")
+
+
 def transition_for(
-    card: Card, merged: bool, approvers: list[str], deciders: dict[str, str]
+    card: Card, event: str, approvers: list[str], deciders: dict[str, str]
 ) -> str | None:
+    """The card state a PR event implies, or None for "write nothing".
+
+    `event` is a three-valued domain, not a merged flag. The flag shared the
+    lossy encoding that caused C5: `closed` fires for merge *and* for
+    abandonment, and `merged=False` cannot tell an open PR from an
+    abandoned one, so an abandoned throwaway PR dragged a draft into
+    contest, started an M1 clock that grew without bound, and printed
+    "waiting {hours}h on {decider}" -- naming a client-side individual for
+    a decision never put to them, in a report Schedule A gives commercial
+    force.
+
+    "abandoned" returns None unconditionally, before any state inspection.
+    Nothing is reversed because nothing should have been written: an
+    abandoned PR means the contest never happened. A contest -> draft
+    reversal is deliberately NOT used -- transition_for cannot know which
+    PR moved a card to contest, so a throwaway PR touching the same file
+    would erase genuine client latency from M1 and hand anyone a one-click
+    way to zero an inconvenient contractual meter.
+    """
+    if event not in PR_EVENTS:
+        raise ValueError(f"unknown PR event {event!r}; expected one of {PR_EVENTS}")
+
+    if event == "abandoned":
+        return None
+
     if card.state != "draft" and card.state != "contest":
         return None
 
@@ -43,9 +71,9 @@ def transition_for(
     # Derived tier, never authored (spec 3/4): a card claiming `tier: T1`
     # while touching auth is T2 and must face the Decider.
     if effective_tier(card) == "T1":
-        return "commit" if merged and card.state == "draft" else None
+        return "commit" if event == "merged" and card.state == "draft" else None
 
-    if not merged:
+    if event == "open":
         return "contest" if card.state == "draft" else None
 
     if card.state == "contest" and decider_approved(card, approvers, deciders):

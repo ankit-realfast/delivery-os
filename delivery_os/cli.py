@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from delivery_os.card import load_all, load_card
-from delivery_os.gh import card_ids_in_paths, load_deciders, transition_for
+from delivery_os.gh import PR_EVENTS, card_ids_in_paths, load_deciders, transition_for
 from delivery_os.lint import lint_card
 from delivery_os.machine import move_card, record_verify
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
@@ -133,7 +133,8 @@ def main(argv=None) -> int:
     p_sync = sub.add_parser("sync-pr")
     p_sync.add_argument("--changed", required=True, help="newline- or comma-separated paths")
     p_sync.add_argument("--approvers", default="", help="comma-separated GitHub handles")
-    p_sync.add_argument("--merged", action="store_true")
+    p_sync.add_argument("--pr-state", required=True, choices=PR_EVENTS,
+                        help="what the PR did: opened/updated, merged, or closed unmerged")
     p_sync.add_argument("--deciders", default="contract/deciders.yml")
 
     args = parser.parse_args(argv)
@@ -194,7 +195,7 @@ def main(argv=None) -> int:
             card = by_id.get(card_id)
             if card is None:
                 continue
-            target = transition_for(card, args.merged, approvers, deciders)
+            target = transition_for(card, args.pr_state, approvers, deciders)
             if target is None:
                 print(f"{card_id}  no transition")
                 continue
