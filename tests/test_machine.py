@@ -74,7 +74,7 @@ def test_record_verify_does_not_mutate_the_original():
 
 
 def test_t1_fast_path_does_not_leak_past_draft():
-    # The T1 no-contest fast path only applies when card.tier == "T1" and card.state == "draft".
-    # If a T1 card is in contest state, it should follow normal transitions and not skip ahead.
-    with pytest.raises(IllegalTransition, match="contest -> build"):
-        move_card(card("contest", tier="T1"), "build", by="akp", now=NOW)
+    # The fast path appends "commit" to the legal set. Pick a state where
+    # "commit" is not already legal, or a leak is invisible.
+    with pytest.raises(IllegalTransition, match="build -> commit"):
+        move_card(card("build", tier="T1"), "commit", by="akp", now=NOW)
