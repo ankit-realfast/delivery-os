@@ -63,20 +63,45 @@ def render_report(cards, now: datetime, today: date) -> str:
     return "\n".join(lines)
 
 
-def verify_card(card, repo_root=".") -> tuple[bool, str]:
-    """Run a card's acceptance eval. Returns (passed, output).
+# pytest exit codes. Only 1 means the eval genuinely went red; everything
+# else means the eval did not get to express an opinion.
+#   0 all passed | 1 tests failed | 2 interrupted
+#   3 internal error | 4 usage error | 5 no tests collected
+_PYTEST_PASSED = 0
+_PYTEST_FAILED = 1
+
+
+def verify_card(card, repo_root=".") -> tuple[str, str, str]:
+    """Run a card's acceptance eval. Returns (outcome, stdout, stderr).
+
+    outcome is one of:
+      "pass"  - the eval ran and was green (exit 0)
+      "fail"  - the eval ran and went red (exit 1)
+      "error" - the eval could not run at all (any other exit code, or no
+                eval on the card). This is NOT a red result and must never
+                reach card history: spec 5 presumes an eval that has never
+                been red to be broken, so recording an unrunnable eval as
+                `verify: fail` would satisfy that guard with pure theatre.
 
     `card.eval` is a pytest node id relative to the REPOSITORY root
     (e.g. "evals/C-0001_test.py::test_x"), not to --root. --root locates
     the card corpus; it is deliberately not threaded through here.
     """
     if not card.eval:
-        return False, "card has no eval"
+        return "error", "", "card has no eval: nothing to run"
     result = subprocess.run(
         [sys.executable, "-m", "pytest", card.eval, "-q"],
         capture_output=True, text=True, cwd=repo_root,
     )
-    return result.returncode == 0, result.stdout
+    if result.returncode == _PYTEST_PASSED:
+        return "pass", result.stdout, result.stderr
+    if result.returncode == _PYTEST_FAILED:
+        return "fail", result.stdout, result.stderr
+    return (
+        "error",
+        result.stdout,
+        f"{result.stderr}\npytest exited {result.returncode}: the eval could not run",
+    )
 
 
 def main(argv=None) -> int:
@@ -134,14 +159,27 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "verify":
-        card = next(c for c in cards if c.id == args.card_id)
-        passed, output = verify_card(card)
-        updated = record_verify(card, passed=passed, by="cli", now=datetime.now(timezone.utc))
+        card = next((c for c in cards if c.id == args.card_id), None)
+        if card is None:
+            print(f"no card with id {args.card_id} under {args.root}", file=sys.stderr)
+            return 2
+        outcome, out, err = verify_card(card)
+        if outcome == "error":
+            # Not recorded: an eval that could not run has proved nothing.
+            print(f"{card.id} verify ERROR: eval could not run - nothing recorded",
+                  file=sys.stderr)
+            if out.strip():
+                print(out, file=sys.stderr)
+            if err.strip():
+                print(err.strip(), file=sys.stderr)
+            return 3
+        updated = record_verify(card, passed=outcome == "pass", by="cli",
+                                now=datetime.now(timezone.utc))
         _rewrite(updated)
-        print(f"{card.id} verify {'pass' if passed else 'fail'}")
-        if not passed:
-            print(output)
-        return 0 if passed else 1
+        print(f"{card.id} verify {outcome}")
+        if outcome == "fail":
+            print(out)
+        return 0 if outcome == "pass" else 1
 
     if args.cmd == "sync-pr":
         changed = [p for p in re.split(r"[,\n]", args.changed) if p.strip()]
