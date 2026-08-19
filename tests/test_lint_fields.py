@@ -69,3 +69,12 @@ def test_t2_missing_value_line_is_rejected():
 
 def test_unknown_state_is_rejected():
     assert "bad-state" in rules(lint_card(t1(state="in_progress")))
+
+
+def test_t1_missing_parent_is_rejected():
+    findings = lint_card(t1(parent=None))
+    # After Task 3 changes, a T1 card with no parent produces two findings:
+    # - missing-field for the absent parent (T1 requires parent)
+    # - tier-escalation because the orphan trigger fires
+    # We assert that the missing-field is present.
+    assert any("parent" in f.message for f in findings if f.rule == "missing-field")
