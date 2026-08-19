@@ -7,10 +7,10 @@ import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from delivery_os.card import load_all, load_card
+from delivery_os.card import load_all, load_card, write_card
 from delivery_os.gh import PR_EVENTS, card_ids_in_paths, load_deciders, transition_for
 from delivery_os.lint import lint_card
-from delivery_os.machine import move_card, record_verify
+from delivery_os.machine import IllegalTransition, move_card, record_verify
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -107,6 +107,19 @@ def verify_card(card, repo_root=".") -> tuple[str, str, str]:
     )
 
 
+def _find(cards, card_id: str, root) -> object | None:
+    """The card with this id, or None after printing a clean diagnosis.
+
+    `next(c for c in cards if ...)` raised a bare StopIteration, which in
+    card-sync fails the job with a traceback and no explanation.
+    """
+    for card in cards:
+        if card.id == card_id:
+            return card
+    print(f"no card with id {card_id} under {root}", file=sys.stderr)
+    return None
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="dos")
     parser.add_argument("--root", default="cards",
@@ -116,7 +129,7 @@ def main(argv=None) -> int:
     p_new = sub.add_parser("new")
     p_new.add_argument("engagement")
     p_new.add_argument("title")
-    p_new.add_argument("--tier", default="T1")
+    p_new.add_argument("--tier", default="T1", choices=["T1", "T2"])
     p_new.add_argument("--parent", default=None)
 
     sub.add_parser("lint")
@@ -156,16 +169,23 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "move":
-        card = next(c for c in cards if c.id == args.card_id)
-        moved = move_card(card, args.to_state, by=args.by, now=datetime.now(timezone.utc))
-        _rewrite(moved)
+        card = _find(cards, args.card_id, args.root)
+        if card is None:
+            return 2
+        try:
+            moved = move_card(card, args.to_state, by=args.by,
+                              now=datetime.now(timezone.utc))
+        except IllegalTransition as exc:
+            # A bare traceback here fails the card-sync job with no diagnosis.
+            print(f"{card.id}: illegal transition {exc}", file=sys.stderr)
+            return 2
+        write_card(moved)
         print(f"{moved.id} -> {moved.state}")
         return 0
 
     if args.cmd == "verify":
-        card = next((c for c in cards if c.id == args.card_id), None)
+        card = _find(cards, args.card_id, args.root)
         if card is None:
-            print(f"no card with id {args.card_id} under {args.root}", file=sys.stderr)
             return 2
         outcome, out, err = verify_card(card)
         if outcome == "error":
@@ -179,7 +199,7 @@ def main(argv=None) -> int:
             return 3
         updated = record_verify(card, passed=outcome == "pass", by="cli",
                                 now=datetime.now(timezone.utc))
-        _rewrite(updated)
+        write_card(updated)
         print(f"{card.id} verify {outcome}")
         if outcome == "fail":
             print(out)
@@ -205,22 +225,11 @@ def main(argv=None) -> int:
                 print(f"{card_id}  no transition")
                 continue
             moved = move_card(card, target, by="github", now=datetime.now(timezone.utc))
-            _rewrite(moved)
+            write_card(moved)
             print(f"{card_id} -> {target}")
         return 0
 
     return 2
-
-
-def _rewrite(card) -> None:
-    import dataclasses
-
-    import yaml
-
-    data = {k: v for k, v in dataclasses.asdict(card).items()
-            if k not in ("path", "intent")}
-    front = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
-    card.path.write_text(f"---\n{front}---\n{card.intent}\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

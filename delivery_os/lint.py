@@ -74,12 +74,21 @@ def lint_card(card: Card) -> list[Finding]:
             Finding(card.id, "unowned-delta", "non-zero behaviour delta requires delta_owner")
         )
 
+    # Spec 4 requires T2's full field set at CONTEST, not at draft: "T2 --
+    # irreversible. All seven fields, named Decider signs" is what precedes
+    # the build, and drafting is explicitly cheap ("agents draft"). Linting
+    # required fields from draft meant `dos new` emitted a card that
+    # immediately failed `dos lint`, and cards.yml fails CI on any finding --
+    # so a draft card could not live in the repo at all, though card-sync
+    # presumes it does. Tier-escalation and the structural checks above
+    # apply from draft onward and are unaffected.
     tier = effective_tier(card)
-    required = T2_REQUIRED if tier == "T2" else T1_REQUIRED
-    for name in required:
-        if not getattr(card, name, None):
-            findings.append(
-                Finding(card.id, "missing-field", f"{tier} card requires '{name}'")
-            )
+    if state_at_least(card.state, "contest"):
+        required = T2_REQUIRED if tier == "T2" else T1_REQUIRED
+        for name in required:
+            if not getattr(card, name, None):
+                findings.append(
+                    Finding(card.id, "missing-field", f"{tier} card requires '{name}'")
+                )
 
     return findings

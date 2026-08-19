@@ -50,11 +50,15 @@ class Card:
     value_moved: bool | None = None
     history: list[dict] = field(default_factory=list)
     intent: str = ""
+    # Which keys the author actually wrote. Loader-owned; lets dump_card
+    # round-trip a deliberate `eval: null` placeholder without inflating
+    # every other field to its default.
+    authored_keys: frozenset[str] = frozenset()
 
 
 _FIELD_NAMES = {f.name for f in dataclasses.fields(Card)}
 # Loader-owned: derived from the file itself, never authored in frontmatter.
-_LOADER_OWNED = {"path", "intent"}
+_LOADER_OWNED = {"path", "intent", "authored_keys"}
 _AUTHORABLE = _FIELD_NAMES - _LOADER_OWNED
 # Line-anchored: a bare `---` line only. Free-text fields legitimately
 # contain "---" (horizontal rules, em-dashes, pasted text).
@@ -198,6 +202,7 @@ def _build_card(path: Path, text: str) -> Card:
     fields = _coerce(path, data)
     fields["path"] = path
     fields["intent"] = body.strip()
+    fields["authored_keys"] = frozenset(data)
     return Card(**fields)
 
 
@@ -222,3 +227,47 @@ def load_all(root: str | Path) -> list[Card]:
             continue
         cards.append(_build_card(p, text))
     return sorted(cards, key=lambda c: c.id)
+
+
+_NO_DEFAULT = object()
+
+
+def _default_for(f: dataclasses.Field) -> object:
+    if f.default is not dataclasses.MISSING:
+        return f.default
+    if f.default_factory is not dataclasses.MISSING:   # type: ignore[misc]
+        return f.default_factory()                     # type: ignore[misc]
+    return _NO_DEFAULT
+
+
+def dump_card(card: Card) -> str:
+    """Serialise a card back to the file format load_card reads.
+
+    Single owner of the format: cli._rewrite used to rebuild the frontmatter
+    layout itself and re-hardcode ("path", "intent"), duplicating
+    _LOADER_OWNED. It also wrote EVERY dataclass field, so a three-field T1
+    card became an eighteen-field card on its first transition. Spec 8 names
+    exactly that -- "T1 cards carrying more than three fields" -- as the most
+    likely way this OS dies.
+
+    A field is written only when the author wrote it, or when its value has
+    moved off the dataclass default. Fields the author never mentioned and
+    never changed stay out of the file.
+    """
+    data: dict = {}
+    for f in dataclasses.fields(Card):
+        if f.name in _LOADER_OWNED:
+            continue
+        value = getattr(card, f.name)
+        if f.name in card.authored_keys or value != _default_for(f):
+            data[f.name] = value
+    front = yaml.safe_dump(data, sort_keys=False, default_flow_style=False,
+                           allow_unicode=True)
+    return f"---\n{front}---\n{card.intent}\n"
+
+
+def write_card(card: Card) -> None:
+    """Overwrite the card's own file with its current state."""
+    if card.path is None:
+        raise ValueError(f"{card.id}: card has no path to write to")
+    Path(card.path).write_text(dump_card(card), encoding="utf-8")
