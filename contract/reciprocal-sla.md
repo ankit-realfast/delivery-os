@@ -1,9 +1,9 @@
 # Schedule A — Reciprocal delivery and decision windows
 
-| Party | Commitment | Measured by |
-|---|---|---|
-| Supplier | Committed cards move Commit to Verify within **N** business days | Card history timestamps |
-| Client | Cards in Contest are resolved by the Named Decider within **M** business days | M1 |
+| Party | Defined term | Commitment | Measured by |
+|---|---|---|---|
+| Supplier | **Delivery Window** | Committed cards move Commit to Verify within **N** business days | Card history timestamps |
+| Client | **Decision Window** | Cards in Contest are resolved by the Named Decider within **M** business days | M1 |
 
 Breach of the Client commitment suspends the Supplier commitment for the affected
 cards, automatically and visibly, without notice or dispute.

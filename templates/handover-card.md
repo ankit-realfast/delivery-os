@@ -1,5 +1,5 @@
 ---
-id: {id}
+id: "{id}"
 title: capability transfer to {client}
 tier: T2
 state: draft
