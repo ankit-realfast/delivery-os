@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from statistics import median
 
 from delivery_os.card import Card, state_index
@@ -71,7 +71,7 @@ def compute_m3(cards: list[Card]) -> dict:
     }
 
 
-def compute_scoreboard(cards: list[Card], today) -> dict:
+def compute_scoreboard(cards: list[Card], today: date) -> dict:
     due = [
         c for c in cards
         if c.tier == "T2" and c.observation_date and c.observation_date <= today
