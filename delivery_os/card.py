@@ -15,6 +15,18 @@ def state_index(state: str) -> int:
     return STATES.index(state)
 
 
+def state_at_least(state: str, floor: str) -> bool:
+    """Is `state` at or past `floor` in the loop?
+
+    An unrecognised state is treated as past the floor: fail closed, so a
+    typo can never buy a card an exemption from a check it should face.
+    """
+    try:
+        return STATES.index(state) >= STATES.index(floor)
+    except ValueError:
+        return True
+
+
 @dataclass
 class Card:
     id: str

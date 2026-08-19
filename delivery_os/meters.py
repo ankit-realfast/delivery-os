@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from statistics import median
 
-from delivery_os.card import Card, state_index
+from delivery_os.card import Card, state_at_least
 
 
 def _last_entry_at(card: Card, state: str) -> datetime | None:
@@ -43,21 +43,44 @@ def compute_m1(cards: list[Card], now: datetime) -> dict:
 
 
 def compute_m2(cards: list[Card]) -> dict:
-    scope = [c for c in cards if state_index(c.state) >= state_index("commit")]
+    """M2 -- eval fallibility (spec 5).
+
+    The spec defines M2 as "share of committed cards with an eval *that can
+    fail*", and operationalises "can fail" in the same section's guard table:
+    "an eval that has never been red is presumed broken until it goes red
+    once". Presence of a non-empty `eval:` string is therefore not the
+    measure -- it is exactly the thing the guard exists to disbelieve.
+
+    The headline is the share of in-scope cards whose eval has demonstrably
+    gone red at least once. The two presumed-broken populations are reported
+    separately because they need different actions:
+
+      never_run  - has an eval, no verify has ever been recorded. Run it.
+      never_red  - has run, has never failed. Prove it can fail.
+    """
+    scope = [c for c in cards if state_at_least(c.state, "commit")]
     with_eval = [c for c in scope if c.eval]
-    without_eval = [c.id for c in scope if not c.eval]
-    never_red = [
-        c.id for c in with_eval
-        if not any(h.get("verify") == "fail" for h in c.history)
-        and any(h.get("verify") for h in c.history)
-    ]
-    headline = round(len(with_eval) / len(scope), 2) if scope else None
+    without_eval = sorted(c.id for c in scope if not c.eval)
+
+    def _ran(card: Card) -> bool:
+        return any(h.get("verify") for h in card.history)
+
+    def _went_red(card: Card) -> bool:
+        return any(h.get("verify") == "fail" for h in card.history)
+
+    proven_fallible = [c for c in with_eval if _went_red(c)]
+    never_run = sorted(c.id for c in with_eval if not _ran(c))
+    never_red = sorted(c.id for c in with_eval if _ran(c) and not _went_red(c))
+    headline = round(len(proven_fallible) / len(scope), 2) if scope else None
     return {
         "headline": headline,
         "in_scope": len(scope),
         "with_eval": len(with_eval),
-        "without_eval": sorted(without_eval),
-        "never_red": sorted(never_red),
+        "proven_fallible": len(proven_fallible),
+        "without_eval": without_eval,
+        "never_run": never_run,
+        "never_red": never_red,
+        "presumed_broken": sorted(set(never_run) | set(never_red)),
     }
 
 

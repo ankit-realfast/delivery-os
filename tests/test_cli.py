@@ -62,7 +62,7 @@ def test_report_renders_all_four_numbers(tmp_path):
     cards = [load_card(p) for p in Path(tmp_path).rglob("*.md")]
     out = render_report(cards, now=NOW, today=date(2026, 8, 19))
     assert "M1 decision latency" in out
-    assert "M2 eval coverage" in out
+    assert "M2 eval fallibility" in out
     assert "M3 behaviour-delta debt" in out
     assert "SCOREBOARD" in out
 

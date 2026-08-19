@@ -51,7 +51,10 @@ def render_report(cards, now: datetime, today: date) -> str:
     sb = compute_scoreboard(cards, today=today)
     lines = [
         f"M1 decision latency   median {m1['median_hours']}h   open {len(m1['open'])}",
-        f"M2 eval coverage      {m2['headline']}   never-red {len(m2['never_red'])}",
+        f"M2 eval fallibility   {m2['headline']}"
+        f"   proven {m2['proven_fallible']}/{m2['in_scope']}"
+        f"   never-run {len(m2['never_run'])}   never-red {len(m2['never_red'])}"
+        f"   no-eval {len(m2['without_eval'])}",
         f"M3 behaviour-delta debt  live {m3['live_deltas']}   unowned {len(m3['unowned'])}",
         "",
         f"SCOREBOARD  value lines moved {sb['headline']}   unrecorded {len(sb['unrecorded'])}",

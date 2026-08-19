@@ -52,7 +52,9 @@ def test_m2_counts_only_cards_at_commit_or_later():
     m2 = compute_m2([drafted, committed])
     assert m2["in_scope"] == 1
     assert m2["with_eval"] == 1
-    assert m2["headline"] == 1.0
+    # C-0002 has an eval but has never been run, so it is presumed broken
+    # (spec 5) and does not count toward fallibility.
+    assert m2["headline"] == 0.0
 
 
 def test_m2_flags_evals_that_have_never_been_red():
@@ -67,8 +69,10 @@ def test_m2_flags_evals_that_have_never_been_red():
 
 
 def test_m2_missing_eval_lowers_the_headline():
-    m2 = compute_m2([card(id="C-0001", state="commit", eval=None),
-                     card(id="C-0002", state="commit")])
+    proven = card(id="C-0002", state="commit", history=[
+        {"state": "verify", "at": "2026-08-01T09:00:00+00:00", "by": "ci", "verify": "fail"},
+    ])
+    m2 = compute_m2([card(id="C-0001", state="commit", eval=None), proven])
     assert m2["headline"] == 0.5
     assert m2["without_eval"] == ["C-0001"]
 
@@ -98,6 +102,52 @@ def test_m1_ignores_verify_entries_that_share_a_state_name():
     assert compute_m1([c], now=NOW)["median_hours"] == 24.0
 
 
-def test_m2_does_not_flag_a_card_with_no_verify_history():
+def test_m2_flags_a_never_run_eval_as_presumed_broken():
+    # DELIBERATE REVERSAL of the previous
+    # test_m2_does_not_flag_a_card_with_no_verify_history. Spec 5 says an
+    # eval that has never been red is presumed broken until it goes red
+    # once; an eval that has never *run* has certainly never been red, so
+    # exempting it was the plan disagreeing with the spec. The spec wins.
     c = card(id="C-0001", state="commit")   # has an eval, empty history
-    assert compute_m2([c])["never_red"] == []
+    m2 = compute_m2([c])
+    assert m2["never_run"] == ["C-0001"]
+    assert m2["never_red"] == []            # it has not run, so it has not "gone green"
+    assert m2["presumed_broken"] == ["C-0001"]
+    assert m2["headline"] == 0.0
+
+
+def test_m2_headline_is_fallibility_not_presence():
+    # THE C2 DEFECT, stated as a test: a corpus where nothing has ever been
+    # verified must not report full eval coverage. contract/reciprocal-sla.md
+    # obliges sharing this number with the client.
+    corpus = [card(id="C-0001", state="commit"), card(id="C-0002", state="verify")]
+    m2 = compute_m2(corpus)
+    assert m2["with_eval"] == 2          # both have an eval string
+    assert m2["headline"] == 0.0         # neither has been proven able to fail
+    assert m2["presumed_broken"] == ["C-0001", "C-0002"]
+
+
+def test_m2_counts_a_card_that_has_gone_red_once_and_then_green():
+    c = card(id="C-0001", state="verify", history=[
+        {"state": "verify", "at": "2026-08-01T09:00:00+00:00", "by": "ci", "verify": "fail"},
+        {"state": "verify", "at": "2026-08-01T10:00:00+00:00", "by": "ci", "verify": "pass"},
+    ])
+    m2 = compute_m2([c])
+    assert m2["headline"] == 1.0
+    assert m2["presumed_broken"] == []
+
+
+def test_m2_separates_never_run_from_never_red():
+    never_run = card(id="C-0001", state="commit")
+    never_red = card(id="C-0002", state="verify", history=[
+        {"state": "verify", "at": "2026-08-01T09:00:00+00:00", "by": "ci", "verify": "pass"},
+    ])
+    m2 = compute_m2([never_run, never_red])
+    assert m2["never_run"] == ["C-0001"]
+    assert m2["never_red"] == ["C-0002"]
+
+
+def test_m2_survives_an_unrecognised_state():
+    # state_at_least fails closed: a typo must not silently drop a card out
+    # of the client-facing meter.
+    assert compute_m2([card(id="C-0001", state="Commit")])["in_scope"] == 1
