@@ -69,3 +69,21 @@ def compute_m3(cards: list[Card]) -> dict:
         "live_deltas": len(live),
         "unowned": sorted(unowned),
     }
+
+
+def compute_scoreboard(cards: list[Card], today) -> dict:
+    due = [
+        c for c in cards
+        if c.tier == "T2" and c.observation_date and c.observation_date <= today
+    ]
+    recorded = [c for c in due if c.value_moved is not None]
+    moved = [c.id for c in recorded if c.value_moved]
+    not_moved = [c.id for c in recorded if not c.value_moved]
+    headline = round(len(moved) / len(recorded), 2) if recorded else None
+    return {
+        "headline": headline,
+        "due": sorted(c.id for c in due),
+        "unrecorded": sorted(c.id for c in due if c.value_moved is None),
+        "moved": sorted(moved),
+        "not_moved": sorted(not_moved),
+    }
