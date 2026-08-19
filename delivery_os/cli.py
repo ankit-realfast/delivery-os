@@ -23,8 +23,10 @@ def _slug(title: str) -> str:
 
 
 def next_card_id(root: str | Path) -> str:
+    # (?!\d) or "C-00071-x.md" reads as 7 and the next id collides with an
+    # existing five-digit card (deferred #9).
     ids = [int(m.group(1)) for p in Path(root).rglob("C-*.md")
-           if (m := re.match(r"C-(\d{4})", p.name))]
+           if (m := re.match(r"C-(\d{4})(?!\d)", p.name))]
     return f"C-{max(ids, default=0) + 1:04d}"
 
 
@@ -51,16 +53,29 @@ def render_report(cards, now: datetime, today: date) -> str:
     m2 = compute_m2(cards)
     m3 = compute_m3(cards)
     sb = compute_scoreboard(cards, today=today)
-    lines = [
-        f"M1 decision latency   median {m1['median_hours']}h   open {len(m1['open'])}",
-        f"M2 eval fallibility   {m2['headline']}"
+
+    # Zero states are rendered as words, not as the literal None. This report
+    # is shared with the client under contract/reciprocal-sla.md; "median
+    # Noneh" and "coverage None" are not numbers anyone can act on.
+    median = "n/a" if m1["median_hours"] is None else f"{m1['median_hours']}h"
+    m2_head = "n/a" if m2["headline"] is None else m2["headline"]
+    sb_head = "n/a" if sb["headline"] is None else sb["headline"]
+
+    lines = []
+    if not cards:
+        lines.append("no cards in the corpus: nothing to report")
+        lines.append("")
+    lines += [
+        f"M1 decision latency   median {median}   open {len(m1['open'])}",
+        f"M2 eval fallibility   {m2_head}"
         f"   proven {m2['proven_fallible']}/{m2['in_scope']}"
         f"   never-run {len(m2['never_run'])}   never-red {len(m2['never_red'])}"
         f"   no-eval {len(m2['without_eval'])}",
         f"M3 behaviour-delta debt  live {m3['live_deltas']}"
         f"   unowned {len(m3['unowned'])}   delta claim disproved {len(m3['disproved'])}",
         "",
-        f"SCOREBOARD  value lines moved {sb['headline']}   unrecorded {len(sb['unrecorded'])}",
+        f"SCOREBOARD  value lines moved {sb_head}"
+        f"   due {len(sb['due'])}   unrecorded {len(sb['unrecorded'])}",
     ]
     for item in m1["open"]:
         lines.append(f"  waiting {item['hours']}h on {item['decider']} for {item['id']}")
@@ -255,7 +270,7 @@ def main(argv=None) -> int:
         changed = [p for p in re.split(r"[,\n]", args.changed) if p.strip()]
         approvers = [a.strip() for a in args.approvers.split(",") if a.strip()]
         deciders = load_deciders(args.deciders)
-        wanted = card_ids_in_paths(changed)
+        wanted = card_ids_in_paths(changed, args.root)
         by_id = {c.id: c for c in cards}
         for card_id in wanted:
             card = by_id.get(card_id)

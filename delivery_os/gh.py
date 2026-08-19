@@ -8,14 +8,27 @@ import yaml
 from delivery_os.card import Card
 from delivery_os.lint import effective_tier
 
-CARD_RE = re.compile(r"(C-\d{4})")
+# Anchored at the start of a filename by .match(), and closed on the right
+# by a negative lookahead. Without it "C-00071-x.md" matched as C-0007 and
+# card-sync wrote state to a DIFFERENT card (deferred #9).
+CARD_RE = re.compile(r"(C-\d{4})(?!\d)")
 
 
-def card_ids_in_paths(paths: list[str]) -> list[str]:
+def card_ids_in_paths(paths: list[str], root: str | Path = "cards") -> list[str]:
+    """Card ids named by changed paths that lie under the corpus root.
+
+    `root` is threaded from --root: the literal "cards" was hardcoded here
+    while the loader honoured --root, so any non-default root made `sync-pr`
+    silently match nothing (I12).
+    """
+    root_parts = tuple(part for part in Path(root).parts if part != ".")
     found: list[str] = []
     for raw in paths:
         path = Path(raw)
-        if path.suffix != ".md" or "cards" not in path.parts[:-1]:
+        if path.suffix != ".md":
+            continue
+        parts = path.parts
+        if len(parts) <= len(root_parts) or parts[:len(root_parts)] != root_parts:
             continue
         match = CARD_RE.match(path.name)
         if match and match.group(1) not in found:

@@ -34,9 +34,14 @@ def compute_m1(cards: list[Card], now: datetime) -> dict:
             closed_durations.append(hours)
             by_decider.setdefault(card.decider or "unassigned", []).append(hours)
         elif card.state == "contest":
-            open_items.append(
-                {"id": card.id, "decider": card.decider, "hours": _hours(entered, now)}
-            )
+            open_items.append({
+                "id": card.id,
+                # Never None: render_report prints this straight into a
+                # client-facing line, and "waiting 24.0h on None" is worse
+                # than useless -- it hides that nobody owns the decision.
+                "decider": card.decider or "unassigned",
+                "hours": _hours(entered, now),
+            })
 
     return {
         "headline": median(closed_durations) if closed_durations else None,

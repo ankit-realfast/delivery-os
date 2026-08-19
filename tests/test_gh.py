@@ -157,3 +157,40 @@ def test_merged_pr_does_not_let_a_t2_draft_skip_contest_even_with_approval():
 def test_merged_pr_commits_a_t1_card_introduced_by_that_same_pr():
     t1 = card(id="C-0008", tier="T1", state="draft", parent="C-0007", decider=None)
     assert transition_for(t1, event="merged", approvers=[], deciders=DECIDERS) == "commit"
+
+
+# --- I12: the corpus root is threaded through -------------------------------
+
+def test_a_non_default_root_is_honoured():
+    # The literal "cards" was hardcoded here while the loader honoured
+    # --root, so any non-default root made sync-pr silently match nothing.
+    assert card_ids_in_paths(["corpus/acme/C-0007-x.md"], root="corpus") == ["C-0007"]
+
+
+def test_a_nested_root_is_honoured():
+    assert card_ids_in_paths(["a/b/acme/C-0007-x.md"], root="a/b") == ["C-0007"]
+
+
+def test_the_default_root_still_matches_cards():
+    assert card_ids_in_paths(["cards/acme/C-0007-x.md"]) == ["C-0007"]
+
+
+def test_a_path_outside_the_given_root_is_ignored():
+    assert card_ids_in_paths(["cards/acme/C-0007-x.md"], root="corpus") == []
+
+
+def test_a_root_prefix_must_match_from_the_start_not_anywhere():
+    assert card_ids_in_paths(["docs/cards/C-0007-x.md"], root="cards") == []
+
+
+# --- deferred #9: the id must not swallow a longer number -------------------
+
+def test_a_five_digit_card_number_is_not_read_as_a_four_digit_one():
+    # "C-00071-x.md" matched as C-0007 and card-sync wrote state to a
+    # DIFFERENT card -- silent state corruption.
+    assert card_ids_in_paths(["cards/acme/C-00071-webhooks.md"]) == []
+
+
+def test_a_four_digit_id_followed_by_a_separator_still_matches():
+    assert card_ids_in_paths(["cards/acme/C-0007-webhooks.md"]) == ["C-0007"]
+    assert card_ids_in_paths(["cards/acme/C-0007.md"]) == ["C-0007"]

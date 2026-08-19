@@ -3,6 +3,7 @@ from pathlib import Path
 
 from delivery_os.card import Card, load_card
 from delivery_os.cli import new_card, next_card_id, render_report, verify_card
+from delivery_os.meters import compute_m1
 from delivery_os.machine import record_verify
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
@@ -97,3 +98,48 @@ def test_verify_card_fails_and_records_fail_in_history(tmp_path):
     assert outcome == "fail"
     updated = record_verify(card, passed=False, by="ci", now=NOW)
     assert updated.history[-1]["verify"] == "fail"
+
+
+# --- deferred #9: next_card_id must not read a five-digit name as four ------
+
+def test_next_card_id_ignores_a_five_digit_card_number(tmp_path):
+    # A file named C-00071-x.md used to parse as 7, so the next id was
+    # C-0008 -- while C-0007 may also exist. Same boundary bug as CARD_RE.
+    (tmp_path / "C-00071-x.md").write_text("---\nid: C-00071\n---\nx\n", encoding="utf-8")
+    (tmp_path / "C-0003-y.md").write_text("---\nid: C-0003\n---\nx\n", encoding="utf-8")
+    assert next_card_id(tmp_path) == "C-0004"
+
+
+# --- deferred #6 / #8: sane zero-state text and an unassigned label ---------
+
+def test_empty_corpus_reports_words_not_none():
+    out = render_report([], now=NOW, today=date(2026, 8, 19))
+    assert "None" not in out
+    assert "no cards in the corpus" in out
+    assert "median n/a" in out
+    assert "value lines moved n/a" in out
+
+
+def test_a_card_with_no_decider_is_labelled_unassigned():
+    c = Card(id="C-0001", title="t", tier="T2", state="contest", parent=None,
+             eval="evals/x.py::test_x", intent="x", decider=None,
+             history=[{"state": "contest", "at": "2026-08-18T12:00:00+00:00", "by": "x"}])
+    assert compute_m1([c], now=NOW)["open"][0]["decider"] == "unassigned"
+    out = render_report([c], now=NOW, today=date(2026, 8, 19))
+    assert "waiting 24.0h on unassigned for C-0001" in out
+    assert "None" not in out
+
+
+def test_open_items_are_ordered_longest_wait_first():
+    def waiting(card_id, since):
+        return Card(id=card_id, title="t", tier="T2", state="contest", parent=None,
+                    decider="Priya", eval="evals/x.py::test_x", intent="x",
+                    history=[{"state": "contest", "at": since, "by": "x"}])
+    cards = [
+        waiting("C-0001", "2026-08-19T06:00:00+00:00"),   # 6h
+        waiting("C-0002", "2026-08-17T12:00:00+00:00"),   # 48h
+        waiting("C-0003", "2026-08-18T12:00:00+00:00"),   # 24h
+    ]
+    m1 = compute_m1(cards, now=NOW)
+    assert [o["id"] for o in m1["open"]] == ["C-0002", "C-0003", "C-0001"]
+    assert [o["hours"] for o in m1["open"]] == [48.0, 24.0, 6.0]
