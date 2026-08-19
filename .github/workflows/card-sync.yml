@@ -21,10 +21,12 @@ jobs:
 
       - name: Collect changed card paths
         id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch origin ${{ github.event.pull_request.head.sha }} --depth=1
-          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...${{ github.event.pull_request.head.sha }} > changed.txt
-          echo "count=$(wc -l < changed.txt)" >> "$GITHUB_OUTPUT"
+          gh api --paginate \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --jq '.[].filename' > changed.txt
 
       - name: Collect approving reviewers
         id: approvers
@@ -43,7 +45,6 @@ jobs:
             ${{ github.event.pull_request.merged && '--merged' || '' }}
 
       - name: Commit state changes
-        if: github.event.pull_request.merged
         run: |
           git config user.name "card-sync"
           git config user.email "card-sync@users.noreply.github.com"

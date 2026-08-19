@@ -31,6 +31,10 @@ def test_duplicate_ids_are_collapsed():
     assert card_ids_in_paths(["cards/a/C-0007-x.md", "cards/b/C-0007-x.md"]) == ["C-0007"]
 
 
+def test_card_shaped_markdown_outside_cards_dir_is_ignored():
+    assert card_ids_in_paths(["docs/C-0007-notes.md"]) == []
+
+
 def test_deciders_file_maps_handles_to_decider_strings(tmp_path):
     f = tmp_path / "deciders.yml"
     f.write_text('priya-r: "Priya Raman <priya@client.example>"\n', encoding="utf-8")
