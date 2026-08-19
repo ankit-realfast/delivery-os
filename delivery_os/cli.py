@@ -9,7 +9,7 @@ from pathlib import Path
 
 from delivery_os.card import load_all, load_card
 from delivery_os.gh import card_ids_in_paths, load_deciders, transition_for
-from delivery_os.lint import lint_card, required_tier
+from delivery_os.lint import lint_card
 from delivery_os.machine import move_card, record_verify
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
 
@@ -32,10 +32,11 @@ def new_card(root, engagement: str, title: str, tier: str, parent: str | None) -
     card_id = next_card_id(root)
     template = (TEMPLATES / f"card-{tier.lower()}.md").read_text(encoding="utf-8")
     # Templates quote {id} and {title}: a scalar opening with '{' would
-    # otherwise parse as a YAML flow mapping. Keep the title quote-safe.
-    body = template.format(
-        id=card_id, title=title.replace('"', "'"), parent=parent or "null"
-    )
+    # otherwise parse as a YAML flow mapping. The title sits inside a
+    # double-quoted YAML scalar, so both '\' and '"' must be escaped —
+    # backslash first, or the quote-escape's own backslashes get doubled.
+    safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+    body = template.format(id=card_id, title=safe_title, parent=parent or "null")
     out_dir = Path(root) / engagement
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{card_id}-{_slug(title)}.md"
@@ -138,6 +139,8 @@ def main(argv=None) -> int:
         updated = record_verify(card, passed=passed, by="cli", now=datetime.now(timezone.utc))
         _rewrite(updated)
         print(f"{card.id} verify {'pass' if passed else 'fail'}")
+        if not passed:
+            print(output)
         return 0 if passed else 1
 
     if args.cmd == "sync-pr":
