@@ -1089,8 +1089,8 @@ Create `templates/card-t1.md`:
 
 ```markdown
 ---
-id: {id}
-title: {title}
+id: "{id}"
+title: "{title}"
 tier: T1
 state: draft
 parent: {parent}
@@ -1105,8 +1105,8 @@ Create `templates/card-t2.md`:
 
 ```markdown
 ---
-id: {id}
-title: {title}
+id: "{id}"
+title: "{title}"
 tier: T2
 state: draft
 parent: {parent}
@@ -1164,7 +1164,11 @@ def new_card(root, engagement: str, title: str, tier: str, parent: str | None) -
         tier = "T2"          # a card with no parent is T2 by definition
     card_id = next_card_id(root)
     template = (TEMPLATES / f"card-{tier.lower()}.md").read_text(encoding="utf-8")
-    body = template.format(id=card_id, title=title, parent=parent or "null")
+    # Templates quote {id} and {title}: a scalar opening with '{' would
+    # otherwise parse as a YAML flow mapping. Keep the title quote-safe.
+    body = template.format(
+        id=card_id, title=title.replace('"', "'"), parent=parent or "null"
+    )
     out_dir = Path(root) / engagement
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{card_id}-{_slug(title)}.md"
@@ -1408,10 +1412,10 @@ Create `contract/reciprocal-sla.md`:
 ```markdown
 # Schedule A — Reciprocal delivery and decision windows
 
-| Party | Commitment | Measured by |
-|---|---|---|
-| Supplier | Committed cards move Commit to Verify within **N** business days | Card history timestamps |
-| Client | Cards in Contest are resolved by the Named Decider within **M** business days | M1 |
+| Party | Defined term | Commitment | Measured by |
+|---|---|---|---|
+| Supplier | **Delivery Window** | Committed cards move Commit to Verify within **N** business days | Card history timestamps |
+| Client | **Decision Window** | Cards in Contest are resolved by the Named Decider within **M** business days | M1 |
 
 Breach of the Client commitment suspends the Supplier commitment for the affected
 cards, automatically and visibly, without notice or dispute.
@@ -1431,7 +1435,7 @@ Create `templates/handover-card.md`:
 
 ```markdown
 ---
-id: {id}
+id: "{id}"
 title: capability transfer to {client}
 tier: T2
 state: draft
