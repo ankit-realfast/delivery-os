@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from delivery_os.card import load_all, load_card
+from delivery_os.gh import card_ids_in_paths, load_deciders, transition_for
 from delivery_os.lint import lint_card, required_tier
 from delivery_os.machine import move_card, record_verify
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
@@ -100,6 +101,12 @@ def main(argv=None) -> int:
     p_verify = sub.add_parser("verify")
     p_verify.add_argument("card_id")
 
+    p_sync = sub.add_parser("sync-pr")
+    p_sync.add_argument("--changed", required=True, help="newline- or comma-separated paths")
+    p_sync.add_argument("--approvers", default="", help="comma-separated GitHub handles")
+    p_sync.add_argument("--merged", action="store_true")
+    p_sync.add_argument("--deciders", default="contract/deciders.yml")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "new":
@@ -132,6 +139,25 @@ def main(argv=None) -> int:
         _rewrite(updated)
         print(f"{card.id} verify {'pass' if passed else 'fail'}")
         return 0 if passed else 1
+
+    if args.cmd == "sync-pr":
+        changed = [p for p in re.split(r"[,\n]", args.changed) if p.strip()]
+        approvers = [a.strip() for a in args.approvers.split(",") if a.strip()]
+        deciders = load_deciders(args.deciders)
+        wanted = card_ids_in_paths(changed)
+        by_id = {c.id: c for c in cards}
+        for card_id in wanted:
+            card = by_id.get(card_id)
+            if card is None:
+                continue
+            target = transition_for(card, args.merged, approvers, deciders)
+            if target is None:
+                print(f"{card_id}  no transition")
+                continue
+            moved = move_card(card, target, by="github", now=datetime.now(timezone.utc))
+            _rewrite(moved)
+            print(f"{card_id} -> {target}")
+        return 0
 
     return 2
 

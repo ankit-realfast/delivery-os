@@ -1,0 +1,52 @@
+name: card-sync
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+
+      - name: Collect changed card paths
+        id: changed
+        run: |
+          git fetch origin ${{ github.event.pull_request.head.sha }} --depth=1
+          git diff --name-only origin/${{ github.event.pull_request.base.ref }}...${{ github.event.pull_request.head.sha }} > changed.txt
+          echo "count=$(wc -l < changed.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Collect approving reviewers
+        id: approvers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            --jq '[.[] | select(.state=="APPROVED") | .user.login] | unique | join(",")' > approvers.txt
+          echo "list=$(cat approvers.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Advance cards
+        run: |
+          python -m delivery_os.cli --root cards sync-pr \
+            --changed "$(cat changed.txt)" \
+            --approvers "${{ steps.approvers.outputs.list }}" \
+            ${{ github.event.pull_request.merged && '--merged' || '' }}
+
+      - name: Commit state changes
+        if: github.event.pull_request.merged
+        run: |
+          git config user.name "card-sync"
+          git config user.email "card-sync@users.noreply.github.com"
+          git add cards/
+          git diff --staged --quiet || git commit -m "chore: advance card states from PR #${{ github.event.pull_request.number }}"
+          git push

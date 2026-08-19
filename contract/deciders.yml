@@ -1,0 +1,3 @@
+# GitHub handle -> the exact `decider` string used on cards.
+# A handle absent from this file can never satisfy the Named Decider clause.
+# priya-r: "Priya Raman <priya@client.example>"
