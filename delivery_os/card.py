@@ -184,18 +184,34 @@ def _coerce(path: Path, data: dict) -> dict:
     return out
 
 
-def _split_frontmatter(text: str) -> tuple[str, str] | None:
-    """(frontmatter, body), or None when the file has no card frontmatter."""
+def _split_frontmatter(text: str, path: Path) -> tuple[str, str] | None:
+    """(frontmatter, body), or None when the file has no card frontmatter.
+
+    A leading UTF-8 BOM is stripped before looking for the opening fence, so
+    it cannot disguise a real card as one with no frontmatter.
+
+    A file with no opening `---` fence at all is not a card -- a README,
+    notes, a template -- and returns None so `load_all` can skip it quietly.
+    A file that DOES open a fence but never closes it IS a card, just a
+    broken one: raise, don't swallow it, or a typo'd closing fence makes the
+    card invisible to `dos lint` instead of failing it.
+    """
+    if text.startswith("﻿"):
+        text = text[1:]
     parts = _FRONTMATTER_RE.split(text, maxsplit=2)
-    if len(parts) < 3 or parts[0].strip():
+    if parts[0].strip():
         return None
+    if len(parts) == 1:
+        return None
+    if len(parts) == 2:
+        raise ValueError(f"{path}: unterminated YAML frontmatter (opening '---' fence is never closed)")
     return parts[1], parts[2]
 
 
 def _build_card(path: Path, text: str) -> Card:
-    split = _split_frontmatter(text)
+    split = _split_frontmatter(text, path)
     if split is None:
-        raise ValueError(f"{path}: missing or unterminated YAML frontmatter")
+        raise ValueError(f"{path}: missing YAML frontmatter")
     front, body = split
     data = yaml.safe_load(front) or {}
     if not isinstance(data, dict):
@@ -218,16 +234,18 @@ def load_card(path: str | Path) -> Card:
 def load_all(root: str | Path) -> list[Card]:
     """Every card under `root`, sorted by id.
 
-    A `.md` file with no card frontmatter (a README, notes, a template) is
-    skipped rather than raising: the corpus directory is a normal directory
-    that people put files in, and `dos lint` crashing with a traceback on a
-    README is worse than ignoring it. A file that DOES have frontmatter but
-    is malformed still raises -- that is a broken card, not a non-card.
+    A `.md` file with no opening `---` fence at all (a README, notes, a
+    template) is skipped rather than raising: the corpus directory is a
+    normal directory that people put files in, and `dos lint` crashing with
+    a traceback on a README is worse than ignoring it. A file that DOES open
+    a frontmatter fence but is malformed -- including an opening fence that
+    is never closed -- still raises: that is a broken card, not a non-card,
+    and must not go invisible to `dos lint` and the scoreboard.
     """
     cards: list[Card] = []
     for p in sorted(Path(root).rglob("*.md")):
         text = p.read_text(encoding="utf-8")
-        if _split_frontmatter(text) is None:
+        if _split_frontmatter(text, p) is None:
             continue
         cards.append(_build_card(p, text))
     return sorted(cards, key=lambda c: c.id)

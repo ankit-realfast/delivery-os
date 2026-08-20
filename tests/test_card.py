@@ -156,6 +156,44 @@ That was a horizontal rule.
     assert card.intent == "This is the body.\n\n---\n\nThat was a horizontal rule."
 
 
+def test_load_all_raises_on_a_card_with_a_typod_closing_fence(tmp_path):
+    # I8 made load_all skip files _split_frontmatter can't parse, so a
+    # README no longer crashes `dos lint`. But a card whose closing fence
+    # is typo'd ('--' instead of '---') opens a real frontmatter block and
+    # never closes it -- that is a broken card, not a non-card, and must
+    # raise rather than silently vanish from the corpus.
+    body = """---
+id: C-0094
+title: broken closing fence
+tier: T1
+state: draft
+--
+Body text that never actually left the frontmatter.
+"""
+    _write(tmp_path, "C-0094.md", body)
+    with pytest.raises(ValueError, match="frontmatter"):
+        load_all(tmp_path)
+
+
+def test_load_all_loads_a_card_with_a_leading_utf8_bom(tmp_path):
+    # A UTF-8 BOM before the opening fence must not disguise a real card as
+    # one with no frontmatter at all.
+    raw = "﻿" + T1_CARD
+    p = tmp_path / "C-0002-retry.md"
+    p.write_bytes(raw.encode("utf-8"))
+    cards = load_all(tmp_path)
+    assert [c.id for c in cards] == ["C-0002"]
+
+
+def test_load_all_still_skips_a_genuine_non_card_markdown_file(tmp_path):
+    # A file with no opening fence at all -- a README, notes, a template --
+    # is not a broken card and must stay skipped, not raise.
+    _write(tmp_path, "README.md", "# Cards\n\nThis directory holds cards.\n")
+    _write(tmp_path, "C-0002-retry.md", T1_CARD)
+    cards = load_all(tmp_path)
+    assert [c.id for c in cards] == ["C-0002"]
+
+
 def test_intent_key_in_frontmatter_is_rejected(tmp_path):
     # intent is loader-owned; should not be in frontmatter
     body = """---
