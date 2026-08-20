@@ -24,6 +24,15 @@ def test_orphan_card_is_t2_by_definition():
     assert "tier-escalation" in rules(lint_card(card(parent=None)))
 
 
+def test_empty_string_parent_is_orphan_too_not_a_stated_parent():
+    # Finding 2: the orphan trigger tested `c.parent is None`, not
+    # falsiness, so `parent: ""` was not caught -- required_tier stayed T1
+    # and the card never faced the escalation. Spec: "a card with no parent
+    # is T2 by definition"; an empty string is no parent.
+    assert required_tier(card(parent="")) == "T2"
+    assert "tier-escalation" in rules(lint_card(card(parent="")))
+
+
 def test_nonzero_behaviour_delta_forces_t2():
     c = card(behaviour_delta="ops team stops using the old sheet", delta_owner="Sam")
     assert required_tier(c) == "T2"

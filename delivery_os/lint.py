@@ -8,13 +8,18 @@ from delivery_os.card import Card, STATES, state_at_least
 
 TIERS = ("T1", "T2")
 
-T1_REQUIRED = ["intent", "eval", "parent"]
+T1_REQUIRED = ["intent", "eval"]
 T2_REQUIRED = [
     "intent", "eval", "decider", "value_line", "kill_criterion", "observation_date",
 ]
 
 T2_TRIGGERS = [
-    ("orphan", lambda c: c.parent is None, "card has no parent"),
+    # Falsiness, not `is None`: spec 3 says "a card with no parent is T2 by
+    # definition", and `parent: ""` is no parent. Testing identity against
+    # None let an empty string route around the gate -- `required_tier`
+    # stayed T1, `move_card` granted the draft -> commit fast path, and
+    # `transition_for` committed a merge with no named Decider.
+    ("orphan", lambda c: not c.parent, "card has no parent"),
     ("behaviour-delta", lambda c: c.behaviour_delta != "none", "behaviour delta is not none"),
     ("no-flag", lambda c: not c.flag_off, "cannot be switched off with a flag"),
     ("production-data", lambda c: c.touches_production_data, "changes the shape of production data"),

@@ -92,6 +92,13 @@ def test_orphan_card_claiming_t1_cannot_use_the_fast_path():
         move_card(card("draft", tier="T1", parent=None), "commit", by="akp", now=NOW)
 
 
+def test_empty_string_parent_card_claiming_t1_cannot_use_the_fast_path():
+    # `parent: ""` is the same orphan escalation as `parent: None` -- an
+    # empty string must not buy the T1 draft -> commit fast path either.
+    with pytest.raises(IllegalTransition, match="draft -> commit"):
+        move_card(card("draft", tier="T1", parent=""), "commit", by="akp", now=NOW)
+
+
 def test_unrecognised_tier_does_not_get_the_fast_path():
     # I9: fail closed. An unknown tier is not a licence for the fast lane.
     with pytest.raises(IllegalTransition, match="draft -> commit"):

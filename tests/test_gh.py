@@ -94,6 +94,15 @@ def test_orphan_card_claiming_t1_cannot_reach_commit_on_merge():
     assert transition_for(orphan, event="merged", approvers=[], deciders=DECIDERS) != "commit"
 
 
+def test_empty_string_parent_card_cannot_reach_commit_on_merge():
+    # Finding 2, C4 in a different spelling: `parent: ""` used to satisfy
+    # `c.parent is None`'s complement and stay T1, so a merge committed it
+    # with no named Decider and no contest. Escalated to T2, this must be
+    # rejected exactly like an unset parent.
+    orphan = card(id="C-0013", tier="T1", state="draft", parent="", decider=None)
+    assert transition_for(orphan, event="merged", approvers=[], deciders=DECIDERS) != "commit"
+
+
 def test_unflaggable_card_claiming_t1_cannot_reach_commit_on_merge():
     c = card(id="C-0011", tier="T1", state="draft", parent="C-0001",
              flag_off=False, decider=None)
