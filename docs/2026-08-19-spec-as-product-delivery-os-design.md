@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-19
 **Status:** Design approved. No implementation started.
-**Supersedes as the answer to "what should our delivery framework be":** `2026-08-10-delivery-practice-tooling-evaluation.md`
+**Supersedes** a 2026-08-10 assessment that framed the question as "where is realfast
+behind Thoughtworks and MBB" and answered it with four open-source tools. That framing
+could only produce a procurement list; what it got right is recorded in the appendix.
 **Scope:** realfast.ai's operating model for client delivery. What the unit of work is, how it moves, how it is measured, how it is sold, and how an engagement ends.
 
 ---

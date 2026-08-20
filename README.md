@@ -188,7 +188,7 @@ delivery_os/
 cards/         the corpus
 contract/      named-decider clause, reciprocal SLA, handle mapping
   templates/ card-t1, card-t2, handover (shipped in the wheel)
-docs/          the design spec and the implementation plan
+docs/          design spec (the authority) and the build decision record
 ```
 
 The design document in `docs/` is the authority. Where this README and the spec
