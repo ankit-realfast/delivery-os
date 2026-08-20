@@ -1,0 +1,7 @@
+schema_version: 1
+cards_root: cards
+archive_root: archive/cards
+deciders_file: contract/deciders.yml
+default_eval_timeout_seconds: 300
+support_url: https://github.com/ankit-realfast/delivery-os/issues
+allowed_eval_environment: []

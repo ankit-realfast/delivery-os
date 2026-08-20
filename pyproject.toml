@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "delivery-os"
+dynamic = ["version"]
+description = "A file-native operating system for decisions, acceptance evidence, and outcomes"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/ankit-realfast/delivery-os"
+Issues = "https://github.com/ankit-realfast/delivery-os/issues"
+
+[project.scripts]
+dos = "delivery_os.cli:main"
+
+[tool.hatch.version]
+path = "delivery_os/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["delivery_os"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+exclude = ["build", "dist"]

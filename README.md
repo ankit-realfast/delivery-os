@@ -1,200 +1,214 @@
 # delivery-os
 
-A delivery operating system where the unit of work is a **spec card**: a markdown
-file that carries its own intent, its acceptance test, the client number it moves,
-and the name of the person who authorised it.
+delivery-os keeps a proposed change, its approval, its acceptance evidence, and its
+measured business result in one Markdown file called a **card**.
 
-Text files and one CLI. No server, no database, no dashboard to operate.
+There is no server or database. Cards live with the code, can be reviewed in a pull
+request, and keep working without GitHub.
+
+> Project status: `0.2.0` is alpha. The card schema is versioned and legacy cards
+> are migratable, but the public package has not been released yet.
 
 ## Why it exists
 
-When building is cheap, the things that stay expensive are deciding what to build,
-knowing whether it's right, and getting anyone to use it. This tool instruments
-those three and treats build capacity as free.
+A code change does not explain who authorized it, what business number it should
+move, or whether it worked. A card does:
 
-The practical consequence: **your delivery metrics are a property of the work
-artifact, not a system you buy.** A commit doesn't know what it was for or whether
-it worked, so tools that scrape git have to guess. A card knows.
+```text
+problem -> proposal -> approval -> build -> acceptance check -> measured outcome
+```
 
-## Install
+delivery-os reports decision delays, whether acceptance checks have demonstrated
+that they can fail, unfinished behavior changes, and business outcomes. It never
+reports velocity, individual throughput, commits, or lines of code.
+
+## Run from this source checkout
+
+Python 3.11 or newer is required:
 
 ```bash
 python3 -m pip install -r requirements.txt
+python3 -m delivery_os doctor
+python3 -m delivery_os lint
 ```
 
-Python 3.11+. Depends on PyYAML and pytest, nothing else.
-pytest is a *runtime* dependency: `python3 -m delivery_os verify` runs a card's
-eval with it.
-
-## The whole interface
+Source development does not require an editable install. The package uses the
+Hatchling build backend, so normal development and release builds do not create
+`delivery_os.egg-info` in the checkout; `dos doctor` also flags that directory if
+another tool creates it. Installed releases expose the shorter `dos` command:
 
 ```bash
-python3 -m delivery_os new acme "retry failed webhooks" --parent C-0042
-python3 -m delivery_os lint
-python3 -m delivery_os move C-0007 commit --by priya
-python3 -m delivery_os verify C-0007
-python3 -m delivery_os observe C-0007 --by akp --moved --delta-held
-python3 -m delivery_os report
+pipx install delivery-os
+dos version
 ```
 
-`--root` points at the card corpus (default `cards/`).
+The installed command becomes available when the first public release is
+published.
 
-For a complete worked example—from an existing product problem to a closed card
-and the final report—see [End-to-end example](docs/end-to-end-example.md).
+## Five-minute workflow
 
-## What a card looks like
+Initialize delivery-os inside another repository:
+
+```bash
+dos init --github
+dos doctor
+```
+
+Create a top-level business-outcome card:
+
+```bash
+dos new acme "recover checkout after a transient payment failure"
+```
+
+The command prints the created file. Fill in its decision-maker, acceptance
+command, target business result, stop condition, and observation date. Then run:
+
+```bash
+dos lint
+dos explain C-0001
+dos move C-0001 contest --by delivery-lead
+dos approve C-0001 \
+  --approved-by "Priya Raman <priya@example.com>" \
+  --recorded-by delivery-lead \
+  --evidence "meeting-notes:2026-09-01"
+dos move C-0001 build --by delivery-lead
+dos move C-0001 verify --by delivery-lead
+dos verify C-0001
+```
+
+On the agreed measurement date:
+
+```bash
+dos move C-0001 observe --by delivery-lead
+dos observe C-0001 --by priya --moved --delta-held
+dos move C-0001 closed --by delivery-lead
+dos report
+```
+
+The [complete end-to-end example](docs/end-to-end-example.md) explains every term,
+field, command, expected failure, and report.
+
+## Review levels in plain language
+
+Cards have two internal levels:
+
+- **T1 — fast:** small, reversible work linked to a larger card.
+- **T2 — reviewed:** work that needs an explicit named decision.
+
+You do not have to memorize the labels. `dos explain` prints the reasons in plain
+language. Reviewed approval is required for top-level outcomes, authentication or
+production-data changes, external commitments, customer-visible behavior changes,
+and changes that cannot be disabled with a feature flag.
+
+The reviewed lifecycle is:
+
+```text
+draft -> contest -> commit -> build -> verify -> observe -> closed
+```
+
+Here, `contest` means “open for examination,” and `commit` means “the named person
+accepted the proposal”; neither term is a Git operation.
+
+## Acceptance commands can use any language
+
+An acceptance eval is an argument list, not Python-specific test syntax:
 
 ```yaml
----
-id: C-0042
-title: checkout failures are recoverable
-tier: T2
-state: commit
-parent: null
-decider: Priya Raman <priya@example.com>
-eval: evals/C-0042_checkout_recovery_test.py
-behaviour_delta: none
-value_line: 'abandoned checkouts caused by transient failures: 4% -> below 1%'
-kill_criterion: recovery creates duplicate orders in production
-observation_date: 2026-09-30
-history:
-- {state: draft,   at: '2026-08-18T09:00:00+00:00', by: priya}
-- {state: contest, at: '2026-08-18T10:30:00+00:00', by: priya}
-- {state: commit,  at: '2026-08-19T02:30:00+00:00', by: priya}
----
-Customers can retry a checkout after a transient payment-provider failure without
-creating a duplicate order.
+eval:
+  command: [npm, test, --, checkout-recovery]
+  timeout_seconds: 180
+  working_directory: web
+  failure_exit_codes: [1]
 ```
 
-Two rules make the format work:
+Python and Go projects can use their native tools just as easily. delivery-os
+distinguishes a real test failure from a missing executable, invalid configuration,
+unexpected exit code, or timeout. Only genuine passes and failures are recorded.
 
-**If you can't write the eval, you don't have a spec — you have a wish.** A card
-that can't be tested is too vague or too big, and splits without anyone arguing
-about points.
+Inspect a command safely before execution:
 
-**A card with no parent is T2 by definition.** Every piece of work traces up to a
-stated value line and a named decider. Nothing hides in the fast lane.
-
-## Two tiers
-
-Tier is **derived**, never authored. You can voluntarily mark a card T2; you cannot
-mark it T1 to skip the gate.
-
-**T1 — reversible.** Three fields, no contest, agents build, the eval decides. If
-it's wrong, delete it. Finding out is cheaper than meeting about it.
-
-**T2 — irreversible.** Full field set, named decider signs, kill criterion agreed
-before the build. Triggered automatically by any of: no parent, changes production
-data shape, touches auth, creates an external commitment, non-zero behaviour delta,
-or can't be switched off with a flag.
-
-That last trigger is deliberate: teams who want the fast lane build behind flags.
-
-## The loop
-
-```
-DRAFT ──▶ CONTEST ──▶ COMMIT ──▶ BUILD ──▶ VERIFY ──▶ OBSERVE
-             ▲                                │
-             └──── eval red, build was right ─┘
-                   (the spec was wrong)
+```bash
+dos verify C-0001 --dry-run
 ```
 
-Only `CONTEST → COMMIT` costs anything — that's the client deciding. Everything
-else is free or automatic, which means the system has exactly one bottleneck and
-it's measurable.
+## Main commands
 
-A red eval tells you *which layer* broke. Build wrong → rebuild, nobody is told.
-Build right and the eval still fails → the **spec** was wrong, and that goes back
-to the decider, not the backlog.
-
-Cards close at Observe, not Verify. The observation date is set at commit time,
-when the client is most willing to agree to be measured.
-
-## The four numbers
-
-```
-$ python3 -m delivery_os report
-M1 decision latency   median 31.0h   open 3
-M2 eval fallibility   0.94   proven 47/50   never-run 2   never-red 1   no-eval 0
-M3 behaviour-delta debt  live 1   unowned 0   delta claim disproved 0
-
-SCOREBOARD  value lines moved 0.75   unrecorded 1
-  waiting 62.0h on Priya Raman for C-0014
-  observation overdue: C-0009
+```text
+dos init                 initialize a project
+dos doctor               diagnose setup and dependencies
+dos new                  draft a card
+dos show                 show the complete card
+dos explain              explain policy and next steps
+dos status               list active cards
+dos lint                 validate all cards
+dos move                 make a legal state transition
+dos approve              record named approval and evidence
+dos verify               run acceptance evidence
+dos observe              record the measured outcome
+dos report               calculate decision and outcome measures
+dos migrate              upgrade legacy cards
+dos archive              recoverably archive a finished card
+dos restore              restore an archived card
+dos version              show product and protocol versions
 ```
 
-M1/M2/M3 watch the constraints. The **scoreboard** is the output — did the promised
-number move — and it's kept in its own box on purpose. "Is it running" and "did it
-pay" are different questions with different answers.
+Use global `--json` for automation and `--dry-run` before mutations. See the
+[reference](docs/reference.md) for fields, commands, exit codes, configuration,
+evals, metrics, and migrations.
 
-`waiting 62.0h on Priya Raman for C-0014` is the line that makes a speed promise
-enforceable. Half the delivery clock sits inside the client's organisation; without
-this, a late engagement is an unwinnable argument.
-
-**M2 measures fallibility, not coverage.** An eval that has never gone red is
-presumed broken. A card whose eval can't even run records nothing and reports an
-error — a config failure must never masquerade as a test result.
-
-**Never measured:** per-person throughput, velocity, commits, lines, cards per week.
-When agents do the building, those count how many agents someone ran.
+Commands discover the project from the current directory. To operate on another
+checkout explicitly, use `dos --project /path/to/repository COMMAND`.
 
 ## GitHub integration
 
-Two workflows, both optional.
+`dos init --github` installs two workflows:
 
-`cards.yml` lints every card on push and PR. Conformance is a test, not a portal.
+- Card linting with read-only repository permission.
+- Pull-request synchronization that records contest time and requires the mapped
+  decision-maker's approval before reviewed work commits.
 
-`card-sync.yml` makes the contest state literal: opening a PR moves its cards to
-`contest`, merging moves them to `commit` — **but a T2 card only commits if the
-named decider is among the approvers.** Map GitHub handles in
-`contract/deciders.yml`; a handle that isn't in that file can never satisfy the
-clause.
+GitHub usernames map to exact card identities in `contract/deciders.yml`. Sync jobs
+are serialized to avoid concurrent card writes, stale approvals do not count, fork
+write-back is skipped, and the pull-request number is recorded as evidence.
 
-## What this deliberately doesn't have
+GitHub is optional. `dos approve` records an external meeting, ticket, email, or
+other evidence reference for decision-makers who do not use GitHub.
 
-- No phase model. Cards have states; projects don't have stages.
-- No estimates, points, velocity, or burndown. Schedule ≈ number of decisions ×
-  decision latency. Estimate the decisions.
-- No separate governance layer. The T2 contest **is** the stage gate.
-- No purchased tooling. Nothing here needs a vendor.
+## Documentation
 
-## Known limitations
+- [End-to-end example](docs/end-to-end-example.md)
+- [Reference](docs/reference.md)
+- [Release process](docs/releases.md)
+- [GitHub integration](docs/github-integration.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
-Read these before relying on it.
+The original design argument remains in
+[the design document](docs/2026-08-19-spec-as-product-delivery-os-design.md).
 
-- **`contract/deciders.yml` ships empty.** Until you populate it, the decider gate
-  is a no-op — `sync-pr` will never advance a T2 card, which fails closed rather
-  than open, but it does mean the automation does nothing until configured.
-- **Fork PRs can't be synced.** `card-sync` pushes card state back to the branch;
-  it has no write access to a fork.
-- **Concurrent writes to the same card conflict.** `card-sync` pushes state while a
-  human may be editing the same card on a branch. `history` is an appended list, so
-  both sides touch the same lines. Not solved.
-- **`python3 -m delivery_os observe` warns but doesn't refuse before the observation date.** You can
-  record an outcome early.
-- **Eval strings are only checked for resolvability**, not relevance. `eval:` can
-  point at a real test that tests the wrong thing.
-- **Non-technical deciders can't easily use this.** The decision gate runs on GitHub
-  PR approvals, so a business-side decider has to review a git diff to register a
-  decision. If your decider isn't an engineer, this is the first thing that will
-  break — and GitHub Issues with a required issue form may simply be the better
-  substrate for you.
+## Repository layout
 
-## Layout
-
-```
-delivery_os/
-  card.py      the file format, and nothing else knows it
-  lint.py      validation policy, including the tier triggers
-  machine.py   state transitions and history
-  meters.py    M1/M2/M3 and the scoreboard, pure arithmetic
-  gh.py        PR-event interpretation
-  cli.py       thin argparse shell over the above
-cards/         the corpus
-contract/      named-decider clause, reciprocal SLA, handle mapping
-  templates/ card-t1, card-t2, handover (shipped in the wheel)
-docs/          design spec (the authority) and the build decision record
+```text
+delivery_os/   schema, policy, command execution, metrics, integrations, and CLI
+cards/         active card collection
+contract/      named decision-maker clause, service agreement, and identity mapping
+docs/          guides and protocol references
+.github/       source-project automation and release workflows
 ```
 
-The design document in `docs/` is the authority. Where this README and the spec
-disagree, the spec wins.
+Closing preserves evidence. Archiving moves a closed, unreferenced card out of the
+active collection without deleting it. delivery-os intentionally provides no
+command that erases historical cards.
+
+## Support
+
+Use [GitHub Issues](https://github.com/ankit-realfast/delivery-os/issues) for bugs,
+installation problems, and feature requests. Include `dos version`, the operating
+system and Python version, the failing command, and its complete error. Redact
+client identities, contract details, credentials, and other sensitive card data.
+Report vulnerabilities through GitHub private security advisories.
+
+## License
+
+delivery-os is licensed under the [Apache License 2.0](LICENSE).

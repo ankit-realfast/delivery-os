@@ -61,16 +61,16 @@ delivery-os requires Python 3.11 or newer.
 python3 -m pip install -r requirements.txt
 ```
 
-This installs the two libraries used by the repository: PyYAML reads card metadata,
-and pytest runs acceptance tests. Python's standard `-m` option runs the
-`delivery_os` package directly from this repository:
+This installs PyYAML, which reads card metadata. The example acceptance check uses
+only Python's standard library. Python's standard `-m` option runs the `delivery_os`
+package directly from this repository:
 
 ```bash
 python3 -m delivery_os lint
 ```
 
 `lint` checks cards for missing or inconsistent information. An empty card
-collection is valid, so this first check prints nothing and exits successfully.
+collection is valid, so this first check prints `OK — 0 cards valid.`
 
 ## 2. Establish the behavior before the change
 
@@ -97,7 +97,7 @@ python3 -m delivery_os new acme "recover checkout after a transient payment fail
 Expected output:
 
 ```text
-cards/acme/C-0001-recover-checkout-after-a-transient-payment-failure.md
+Created cards/acme/C-0001-recover-checkout-after-a-transient-payment-failure.md
 ```
 
 The command creates a card with `parent: null`, meaning it does not sit under
@@ -110,13 +110,19 @@ for `observation_date` in actual work; the example date is illustrative.
 
 ```yaml
 ---
+schema_version: 1
 id: C-0001
 title: recover checkout after a transient payment failure
 tier: T2
 state: draft
 parent: null
 decider: Priya Raman <priya@client.example>
-eval: evals/C-0001_checkout_recovery_test.py
+eval:
+  preflight: [python3, --version]
+  command: [python3, evals/C-0001_checkout_recovery_eval.py]
+  timeout_seconds: 300
+  working_directory: .
+  failure_exit_codes: [1]
 behaviour_delta: checkout retries once after a transient provider timeout
 delta_owner: Payments team
 value_line: 'checkouts abandoned after a transient provider failure: 4% -> below 1%'
@@ -140,12 +146,13 @@ Here is what every field means:
 
 | Field | Meaning |
 | --- | --- |
+| `schema_version` | The card-format version. It lets delivery-os upgrade old cards safely. |
 | `id` and `title` | The stable card identifier and a human-readable summary. |
 | `tier` | The review level. T2 means this card needs explicit approval. |
 | `state` | The card's current position in the workflow. It starts as `draft`. |
 | `parent` | The larger card this work supports. `null` means this is a top-level business outcome. |
 | `decider` | The person authorized to accept the promise and its tradeoffs. |
-| `eval` | The pytest acceptance-test file, relative to the repository root. |
+| `eval` | The acceptance command, optional setup check, time limit, and which exit codes mean a real test failure. |
 | `behaviour_delta` | The externally noticeable behavior that will change. `none` means no behavior should change. |
 | `delta_owner` | The team responsible for that behavior change. |
 | `value_line` | The measurable business number expected to improve: starting value followed by target value. |
@@ -162,9 +169,9 @@ Here is what every field means:
 After filling in the draft, use commands to change `state`, `value_moved`,
 `delta_held`, and `history`; do not maintain those fields by hand.
 
-## 4. Write the acceptance eval before building
+## 4. Write the acceptance check before building
 
-Create `evals/C-0001_checkout_recovery_test.py`:
+Create `evals/C-0001_checkout_recovery_eval.py`:
 
 ```python
 from example_checkout import place_order
@@ -181,13 +188,27 @@ class TransientFailureGateway:
         return {"order_id": order_id, "status": "paid"}
 
 
-def test_checkout_retries_one_transient_failure():
+def main():
     gateway = TransientFailureGateway()
 
-    result = place_order(gateway, "order-123")
+    try:
+        result = place_order(gateway, "order-123")
+    except TimeoutError:
+        print("FAIL: checkout did not retry the transient failure")
+        return 1
+    except Exception as exc:
+        print(f"ERROR: acceptance check could not run: {exc}")
+        return 2
 
-    assert result == {"order_id": "order-123", "status": "paid"}
-    assert gateway.attempts == 2
+    if result != {"order_id": "order-123", "status": "paid"} or gateway.attempts != 2:
+        print("FAIL: checkout did not produce the promised result")
+        return 1
+    print("PASS: checkout retried once and completed the order")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 ```
 
 Now validate the card structure:
@@ -196,13 +217,13 @@ Now validate the card structure:
 python3 -m delivery_os lint
 ```
 
-No output means the card collection is valid. Lint proves that the card is
+An `OK` message means the card collection is valid. Lint proves that the card is
 structurally valid at its current state; it does not prove the eval is relevant or
 green. At `commit` and later, lint also requires the eval path to resolve to a real
 file.
 
-Commit the draft and eval to version control as you normally would. The card, test,
-and implementation history are intended to travel together.
+Commit the draft and eval to version control as you normally would. The card,
+acceptance check, and implementation history are intended to travel together.
 
 ## 5. Ask the named person to approve the proposal
 
@@ -220,17 +241,21 @@ the report shows how long it has been waiting on Priya. The report calls this
 elapsed time **M1 decision latency**.
 
 Discuss the eval, value line, behavior change, and kill criterion with the named
-decider. If Priya accepts them, record the commitment:
+decision-maker. If Priya accepts them, record who approved, who entered the record,
+and where the approval can be checked:
 
 ```bash
-python3 -m delivery_os move C-0001 commit --by priya
+python3 -m delivery_os approve C-0001 \
+  --approved-by "Priya Raman <priya@client.example>" \
+  --recorded-by delivery-lead \
+  --evidence "meeting-notes:2026-09-01"
 ```
 
-The local command trusts the `--by` value; it does not check the person's identity.
-Use the GitHub approval automation described later when this approval must be
-enforced rather than recorded by team convention.
+The `--approved-by` value must exactly match the card's `decider`. The local command
+records evidence but cannot check a person's identity. Use the GitHub automation
+described later when GitHub identity should enforce the approval.
 
-## 6. Prove that the acceptance test detects the problem
+## 6. Prove that the acceptance check detects the problem
 
 Start the build and move to verification without changing the existing checkout
 implementation:
@@ -241,14 +266,14 @@ python3 -m delivery_os move C-0001 verify --by delivery-lead
 python3 -m delivery_os verify C-0001
 ```
 
-The command should print `C-0001 verify fail` and exit with status 1 because the
-existing function lets the timeout escape. This deliberate first failure proves
-that the test detects the behavior it is supposed to prevent. Test output is often
-called **red** when it fails and **green** when it passes.
+The command should report `C-0001 verification fail` and exit with status 1 because
+the existing function lets the timeout escape. This deliberate first failure proves
+that the check detects the behavior it is supposed to prevent. Acceptance output is
+often called **red** when it fails and **green** when it passes.
 
 The report calls this evidence **M2 eval fallibility**. Despite the unusual name,
-the question is simple: has the test demonstrated that it is capable of failing?
-A test that has only ever passed might be testing nothing useful.
+the question is simple: has the check demonstrated that it is capable of failing?
+A check that has only ever passed might be checking nothing useful.
 
 `python3 -m delivery_os verify` records the failure in the card's history but
 deliberately leaves the card in `verify`. Send it back to the build state:
@@ -257,9 +282,9 @@ deliberately leaves the card in `verify`. Send it back to the build state:
 python3 -m delivery_os move C-0001 build --by delivery-lead
 ```
 
-If pytest cannot collect or run the eval, `python3 -m delivery_os verify` reports
+If the eval cannot be found or executed, `python3 -m delivery_os verify` reports
 `ERROR` and records nothing. Fix the eval configuration and run it again; an
-execution error is not a failed acceptance test.
+execution error is not a failed acceptance check.
 
 ## 7. Build the smallest passing change
 
@@ -285,7 +310,7 @@ python3 -m delivery_os lint
 Expected verification output:
 
 ```text
-C-0001 verify pass
+C-0001 verification pass
 ```
 
 At this point the acceptance behavior is green. The history contains both the

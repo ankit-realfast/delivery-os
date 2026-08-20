@@ -7,11 +7,15 @@ from delivery_os.card import Card, state_at_least
 from delivery_os.lint import effective_tier
 from delivery_os.machine import ANNOTATION_KEYS
 
+METRIC_VERSION = 1
+
 
 def _last_entry_at(card: Card, state: str) -> datetime | None:
-    stamps = [h["at"] for h in card.history
-              if h.get("state") == state
-              and not any(k in h for k in ANNOTATION_KEYS)]
+    stamps = [
+        h["at"]
+        for h in card.history
+        if h.get("state") == state and not any(k in h for k in ANNOTATION_KEYS)
+    ]
     return datetime.fromisoformat(stamps[-1]) if stamps else None
 
 
@@ -23,6 +27,7 @@ def compute_m1(cards: list[Card], now: datetime) -> dict:
     closed_durations: list[float] = []
     by_decider: dict[str, list[float]] = {}
     open_items: list[dict] = []
+    completed: list[dict] = []
 
     for card in cards:
         entered = _last_entry_at(card, "contest")
@@ -33,21 +38,32 @@ def compute_m1(cards: list[Card], now: datetime) -> dict:
             hours = _hours(entered, committed)
             closed_durations.append(hours)
             by_decider.setdefault(card.decider or "unassigned", []).append(hours)
+            completed.append(
+                {
+                    "id": card.id,
+                    "decider": card.decider or "unassigned",
+                    "hours": hours,
+                }
+            )
         elif card.state == "contest":
-            open_items.append({
-                "id": card.id,
-                # Never None: render_report prints this straight into a
-                # client-facing line, and "waiting 24.0h on None" is worse
-                # than useless -- it hides that nobody owns the decision.
-                "decider": card.decider or "unassigned",
-                "hours": _hours(entered, now),
-            })
+            open_items.append(
+                {
+                    "id": card.id,
+                    # Never None: render_report prints this straight into a
+                    # client-facing line, and "waiting 24.0h on None" is worse
+                    # than useless -- it hides that nobody owns the decision.
+                    "decider": card.decider or "unassigned",
+                    "hours": _hours(entered, now),
+                }
+            )
 
     return {
+        "metric_version": METRIC_VERSION,
         "headline": median(closed_durations) if closed_durations else None,
         "median_hours": median(closed_durations) if closed_durations else None,
         "by_decider": {k: median(v) for k, v in by_decider.items()},
         "open": sorted(open_items, key=lambda o: -o["hours"]),
+        "completed": sorted(completed, key=lambda item: item["id"]),
     }
 
 
@@ -82,6 +98,7 @@ def compute_m2(cards: list[Card]) -> dict:
     never_red = sorted(c.id for c in with_eval if _ran(c) and not _went_red(c))
     headline = round(len(proven_fallible) / len(scope), 2) if scope else None
     return {
+        "metric_version": METRIC_VERSION,
         "headline": headline,
         "in_scope": len(scope),
         "with_eval": len(with_eval),
@@ -90,6 +107,7 @@ def compute_m2(cards: list[Card]) -> dict:
         "never_run": never_run,
         "never_red": never_red,
         "presumed_broken": sorted(set(never_run) | set(never_red)),
+        "contributors": sorted(c.id for c in scope),
     }
 
 
@@ -101,16 +119,19 @@ def compute_m3(cards: list[Card]) -> dict:
     # observed delta did not hold is that check firing.
     disproved = sorted(c.id for c in cards if c.delta_held is False)
     return {
+        "metric_version": METRIC_VERSION,
         "headline": len(live),
         "live_deltas": len(live),
         "unowned": sorted(unowned),
         "disproved": disproved,
+        "contributors": sorted(c.id for c in live),
     }
 
 
 def compute_scoreboard(cards: list[Card], today: date) -> dict:
     due = [
-        c for c in cards
+        c
+        for c in cards
         if effective_tier(c) == "T2" and c.observation_date and c.observation_date <= today
     ]
     recorded = [c for c in due if c.value_moved is not None]
@@ -118,6 +139,7 @@ def compute_scoreboard(cards: list[Card], today: date) -> dict:
     not_moved = [c.id for c in recorded if not c.value_moved]
     headline = round(len(moved) / len(recorded), 2) if recorded else None
     return {
+        "metric_version": METRIC_VERSION,
         "headline": headline,
         "due": sorted(c.id for c in due),
         "unrecorded": sorted(c.id for c in due if c.value_moved is None),

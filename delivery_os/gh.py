@@ -11,7 +11,7 @@ from delivery_os.lint import effective_tier
 # Anchored at the start of a filename by .match(), and closed on the right
 # by a negative lookahead. Without it "C-00071-x.md" matched as C-0007 and
 # card-sync wrote state to a DIFFERENT card (deferred #9).
-CARD_RE = re.compile(r"(C-\d{4})(?!\d)")
+CARD_RE = re.compile(r"(C-\d{4,})(?!\d)")
 
 
 def card_ids_in_paths(paths: list[str], root: str | Path = "cards") -> list[str]:
@@ -28,7 +28,7 @@ def card_ids_in_paths(paths: list[str], root: str | Path = "cards") -> list[str]
         if path.suffix != ".md":
             continue
         parts = path.parts
-        if len(parts) <= len(root_parts) or parts[:len(root_parts)] != root_parts:
+        if len(parts) <= len(root_parts) or parts[: len(root_parts)] != root_parts:
             continue
         match = CARD_RE.match(path.name)
         if match and match.group(1) not in found:
@@ -37,7 +37,12 @@ def card_ids_in_paths(paths: list[str], root: str | Path = "cards") -> list[str]
 
 
 def load_deciders(path: str | Path) -> dict[str, str]:
-    return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict) or not all(
+        isinstance(handle, str) and isinstance(decider, str) for handle, decider in loaded.items()
+    ):
+        raise ValueError(f"{path}: deciders must map GitHub usernames to decider text")
+    return loaded
 
 
 def decider_approved(card: Card, approvers: list[str], deciders: dict[str, str]) -> bool:
@@ -50,7 +55,11 @@ PR_EVENTS = ("open", "merged", "abandoned")
 
 
 def transition_for(
-    card: Card, event: str, approvers: list[str], deciders: dict[str, str]
+    card: Card,
+    event: str,
+    approvers: list[str],
+    deciders: dict[str, str],
+    pull_request: str | None = None,
 ) -> str | None:
     """The card state a PR event implies, or None for "write nothing".
 
@@ -63,18 +72,34 @@ def transition_for(
     a decision never put to them, in a report Schedule A gives commercial
     force.
 
-    "abandoned" returns None unconditionally, before any state inspection.
-    Nothing is reversed because nothing should have been written: an
-    abandoned PR means the contest never happened. A contest -> draft
-    reversal is deliberately NOT used -- transition_for cannot know which
-    PR moved a card to contest, so a throwaway PR touching the same file
-    would erase genuine client latency from M1 and hand anyone a one-click
-    way to zero an inconvenient contractual meter.
+    Contest history now carries the pull-request number. An abandoned event
+    may therefore reverse contest -> draft only when the latest transition
+    was written by that same PR. A throwaway PR cannot erase a decision
+    started elsewhere.
     """
     if event not in PR_EVENTS:
         raise ValueError(f"unknown PR event {event!r}; expected one of {PR_EVENTS}")
 
     if event == "abandoned":
+        # Reverse only the contest started by this same pull request. This
+        # preserves a genuine decision raised elsewhere while preventing an
+        # abandoned proposal from leaving an M1 clock running forever.
+        latest_transition = next(
+            (
+                entry
+                for entry in reversed(card.history)
+                if "verify" not in entry and "observed" not in entry
+            ),
+            None,
+        )
+        if (
+            card.state == "contest"
+            and pull_request
+            and latest_transition
+            and latest_transition.get("state") == "contest"
+            and latest_transition.get("pull_request") == pull_request
+        ):
+            return "draft"
         return None
 
     if card.state != "draft" and card.state != "contest":

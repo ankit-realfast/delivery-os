@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 STATES = ["draft", "contest", "commit", "build", "verify", "observe", "closed"]
+CURRENT_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSIONS = (0, CURRENT_SCHEMA_VERSION)
+
+
+class ConcurrentWriteError(RuntimeError):
+    """The card changed on disk after this process loaded it."""
 
 
 def state_index(state: str) -> int:
@@ -33,10 +43,12 @@ class Card:
     title: str
     tier: str
     state: str
+    # Version 0 means a legacy card with no authored schema_version.
+    schema_version: int = 0
     path: Path | None = None
     parent: str | None = None
     decider: str | None = None
-    eval: str | None = None
+    eval: str | dict[str, Any] | None = None
     behaviour_delta: str = "none"
     delta_owner: str | None = None
     value_line: str | None = None
@@ -58,11 +70,15 @@ class Card:
     # round-trip a deliberate `eval: null` placeholder without inflating
     # every other field to its default.
     authored_keys: frozenset[str] = frozenset()
+    # Frontmatter key -> one-based source line, used for actionable lint output.
+    field_lines: dict[str, int] = field(default_factory=dict)
+    # Optimistic concurrency token. Loader-owned and never serialized.
+    source_digest: str | None = None
 
 
 _FIELD_NAMES = {f.name for f in dataclasses.fields(Card)}
 # Loader-owned: derived from the file itself, never authored in frontmatter.
-_LOADER_OWNED = {"path", "intent", "authored_keys"}
+_LOADER_OWNED = {"path", "intent", "authored_keys", "field_lines", "source_digest"}
 _AUTHORABLE = _FIELD_NAMES - _LOADER_OWNED
 # Line-anchored: a bare `---` line only. Free-text fields legitimately
 # contain "---" (horizontal rules, em-dashes, pasted text).
@@ -78,15 +94,31 @@ _FRONTMATTER_RE = re.compile(r"(?m)^---\s*$")
 # and take down `dos report` for the entire corpus.
 
 _TEXT_FIELDS = {
-    "id", "title", "tier", "state", "parent", "decider", "eval",
-    "behaviour_delta", "delta_owner", "value_line", "kill_criterion",
+    "id",
+    "title",
+    "tier",
+    "state",
+    "parent",
+    "decider",
+    "behaviour_delta",
+    "delta_owner",
+    "value_line",
+    "kill_criterion",
     "blocked_on",
 }
 _BOOL_FIELDS = {
-    "touches_production_data", "touches_auth", "external_commitment",
-    "flag_off", "value_moved", "delta_held",
+    "touches_production_data",
+    "touches_auth",
+    "external_commitment",
+    "flag_off",
+    "value_moved",
+    "delta_held",
 }
 _REQUIRED = ("id", "title", "tier", "state")
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _as_text(path: Path, key: str, raw: object) -> str:
@@ -102,9 +134,7 @@ def _as_text(path: Path, key: str, raw: object) -> str:
 def _as_bool(path: Path, key: str, raw: object) -> bool:
     if isinstance(raw, bool):
         return raw
-    raise ValueError(
-        f"{path}: '{key}' must be true or false, got {type(raw).__name__} {raw!r}"
-    )
+    raise ValueError(f"{path}: '{key}' must be true or false, got {type(raw).__name__} {raw!r}")
 
 
 def _as_date(path: Path, key: str, raw: object) -> date:
@@ -116,10 +146,95 @@ def _as_date(path: Path, key: str, raw: object) -> date:
         try:
             return date.fromisoformat(raw)
         except ValueError:
-            raise ValueError(
-                f"{path}: '{key}' must be a YYYY-MM-DD date, got {raw!r}"
-            ) from None
+            raise ValueError(f"{path}: '{key}' must be a YYYY-MM-DD date, got {raw!r}") from None
     raise ValueError(f"{path}: '{key}' must be a date, got {type(raw).__name__}")
+
+
+def _as_schema_version(path: Path, raw: object) -> int:
+    if not isinstance(raw, int) or isinstance(raw, bool):
+        raise ValueError(f"{path}: 'schema_version' must be an integer, got {type(raw).__name__}")
+    if raw not in SUPPORTED_SCHEMA_VERSIONS:
+        supported = ", ".join(str(v) for v in SUPPORTED_SCHEMA_VERSIONS)
+        raise ValueError(
+            f"{path}: unsupported schema_version {raw}; this delivery-os release "
+            f"supports {supported}. Upgrade delivery-os before changing this card."
+        )
+    return raw
+
+
+def _as_eval(path: Path, raw: object) -> str | dict[str, Any]:
+    """Accept legacy pytest strings and v1 language-neutral command specs."""
+    if isinstance(raw, str):
+        return raw
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: 'eval' must be a command mapping, got {type(raw).__name__}")
+    allowed = {
+        "command",
+        "preflight",
+        "timeout_seconds",
+        "working_directory",
+        "environment",
+        "failure_exit_codes",
+    }
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise ValueError(f"{path}: eval has unknown fields {unknown}")
+
+    command = raw.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(part, str) and part for part in command)
+    ):
+        raise ValueError(f"{path}: eval.command must be a non-empty list of strings")
+
+    preflight = raw.get("preflight")
+    if preflight is not None and (
+        not isinstance(preflight, list)
+        or not preflight
+        or not all(isinstance(part, str) and part for part in preflight)
+    ):
+        raise ValueError(f"{path}: eval.preflight must be a non-empty list of strings")
+
+    timeout = raw.get("timeout_seconds", 300)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
+        raise ValueError(f"{path}: eval.timeout_seconds must be a positive integer")
+
+    working_directory = raw.get("working_directory", ".")
+    if not isinstance(working_directory, str) or not working_directory:
+        raise ValueError(f"{path}: eval.working_directory must be text")
+
+    environment = raw.get("environment", {})
+    if not isinstance(environment, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in environment.items()
+    ):
+        raise ValueError(f"{path}: eval.environment must map text names to text values")
+
+    failure_codes = raw.get("failure_exit_codes", [1])
+    if (
+        not isinstance(failure_codes, list)
+        or not failure_codes
+        or not all(
+            isinstance(code, int) and not isinstance(code, bool) and code != 0
+            for code in failure_codes
+        )
+    ):
+        raise ValueError(
+            f"{path}: eval.failure_exit_codes must be a non-empty list of non-zero integers"
+        )
+
+    normalized: dict[str, Any] = {"command": list(command)}
+    if preflight is not None:
+        normalized["preflight"] = list(preflight)
+    if "timeout_seconds" in raw:
+        normalized["timeout_seconds"] = timeout
+    if "working_directory" in raw:
+        normalized["working_directory"] = working_directory
+    if "environment" in raw:
+        normalized["environment"] = dict(environment)
+    if "failure_exit_codes" in raw:
+        normalized["failure_exit_codes"] = list(failure_codes)
+    return normalized
 
 
 def _as_history(path: Path, raw: object) -> list[dict]:
@@ -128,9 +243,7 @@ def _as_history(path: Path, raw: object) -> list[dict]:
     out: list[dict] = []
     for i, entry in enumerate(raw):
         if not isinstance(entry, dict):
-            raise ValueError(
-                f"{path}: history[{i}] must be a mapping, got {type(entry).__name__}"
-            )
+            raise ValueError(f"{path}: history[{i}] must be a mapping, got {type(entry).__name__}")
         item = dict(entry)
         at = item.get("at")
         if at is None:
@@ -144,19 +257,32 @@ def _as_history(path: Path, raw: object) -> list[dict]:
         try:
             stamp = datetime.fromisoformat(at)
         except ValueError:
-            raise ValueError(
-                f"{path}: history[{i}].at is not an ISO timestamp: {at!r}"
-            ) from None
+            raise ValueError(f"{path}: history[{i}].at is not an ISO timestamp: {at!r}") from None
         if stamp.tzinfo is None:
             # M1 subtracts these from an aware `now`; mixing naive and aware
             # raises TypeError and takes down `dos report` for every card.
-            raise ValueError(
-                f"{path}: history[{i}].at needs a timezone offset, got {at!r}"
-            )
+            raise ValueError(f"{path}: history[{i}].at needs a timezone offset, got {at!r}")
         item["at"] = stamp.isoformat()
-        for key in ("state", "by", "verify"):
+        for key in (
+            "state",
+            "by",
+            "verify",
+            "observed",
+            "delta",
+            "approved_by",
+            "approval_evidence",
+            "pull_request",
+        ):
             if key in item and item[key] is not None:
                 item[key] = _as_text(path, f"history[{i}].{key}", item[key])
+        if "command" in item:
+            command = item["command"]
+            if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
+                raise ValueError(f"{path}: history[{i}].command must be a list of strings")
+        if "exit_code" in item and not isinstance(item["exit_code"], int):
+            raise ValueError(f"{path}: history[{i}].exit_code must be an integer")
+        if "duration_seconds" in item and not isinstance(item["duration_seconds"], (int, float)):
+            raise ValueError(f"{path}: history[{i}].duration_seconds must be a number")
         out.append(item)
     return out
 
@@ -170,13 +296,17 @@ def _coerce(path: Path, data: dict) -> dict:
             continue
         if key == "history":
             out[key] = _as_history(path, raw)
+        elif key == "schema_version":
+            out[key] = _as_schema_version(path, raw)
+        elif key == "eval":
+            out[key] = _as_eval(path, raw)
         elif key == "observation_date":
             out[key] = _as_date(path, key, raw)
         elif key in _BOOL_FIELDS:
             out[key] = _as_bool(path, key, raw)
         elif key in _TEXT_FIELDS:
             out[key] = _as_text(path, key, raw)
-        else:                                    # pragma: no cover - defensive
+        else:  # pragma: no cover - defensive
             out[key] = raw
     missing = [k for k in _REQUIRED if not out.get(k)]
     if missing:
@@ -204,7 +334,9 @@ def _split_frontmatter(text: str, path: Path) -> tuple[str, str] | None:
     if len(parts) == 1:
         return None
     if len(parts) == 2:
-        raise ValueError(f"{path}: unterminated YAML frontmatter (opening '---' fence is never closed)")
+        raise ValueError(
+            f"{path}: unterminated YAML frontmatter (opening '---' fence is never closed)"
+        )
     return parts[1], parts[2]
 
 
@@ -223,6 +355,12 @@ def _build_card(path: Path, text: str) -> Card:
     fields["path"] = path
     fields["intent"] = body.strip()
     fields["authored_keys"] = frozenset(data)
+    fields["field_lines"] = {
+        match.group(1): line_number
+        for line_number, line in enumerate(front.splitlines(), start=2)
+        if (match := re.match(r"^([A-Za-z_][A-Za-z0-9_-]*):", line))
+    }
+    fields["source_digest"] = _digest(text)
     return Card(**fields)
 
 
@@ -257,8 +395,8 @@ _NO_DEFAULT = object()
 def _default_for(f: dataclasses.Field) -> object:
     if f.default is not dataclasses.MISSING:
         return f.default
-    if f.default_factory is not dataclasses.MISSING:   # type: ignore[misc]
-        return f.default_factory()                     # type: ignore[misc]
+    if f.default_factory is not dataclasses.MISSING:
+        return f.default_factory()
     return _NO_DEFAULT
 
 
@@ -277,19 +415,77 @@ def dump_card(card: Card) -> str:
     never changed stay out of the file.
     """
     data: dict = {}
+    if "schema_version" in card.authored_keys or card.schema_version != 0:
+        data["schema_version"] = card.schema_version
     for f in dataclasses.fields(Card):
-        if f.name in _LOADER_OWNED:
+        if f.name in _LOADER_OWNED or f.name == "schema_version":
             continue
         value = getattr(card, f.name)
         if f.name in card.authored_keys or value != _default_for(f):
             data[f.name] = value
-    front = yaml.safe_dump(data, sort_keys=False, default_flow_style=False,
-                           allow_unicode=True)
+    front = yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True)
     return f"---\n{front}---\n{card.intent}\n"
 
 
-def write_card(card: Card) -> None:
-    """Overwrite the card's own file with its current state."""
+def write_card(card: Card, *, force: bool = False) -> None:
+    """Atomically overwrite a card, refusing to lose a concurrent edit."""
     if card.path is None:
         raise ValueError(f"{card.id}: card has no path to write to")
-    Path(card.path).write_text(dump_card(card), encoding="utf-8")
+    path = Path(card.path)
+    if path.exists() and card.source_digest and not force:
+        current = path.read_text(encoding="utf-8")
+        if _digest(current) != card.source_digest:
+            raise ConcurrentWriteError(
+                f"{card.id}: {path} changed after it was loaded; reload and retry "
+                "instead of overwriting another person's work"
+            )
+
+    rendered = dump_card(card)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old_mode = path.stat().st_mode if path.exists() else None
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(rendered)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_path = Path(handle.name)
+        if old_mode is not None:
+            os.chmod(temp_path, old_mode)
+        os.replace(temp_path, path)
+        card.source_digest = _digest(rendered)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def migrate_card(card: Card) -> Card:
+    """Return the current-schema representation of a legacy card."""
+    if card.schema_version == CURRENT_SCHEMA_VERSION and not isinstance(card.eval, str):
+        return card
+    if card.schema_version not in {0, CURRENT_SCHEMA_VERSION}:
+        raise ValueError(f"{card.id}: cannot migrate schema {card.schema_version}")
+
+    eval_spec = card.eval
+    if isinstance(eval_spec, str):
+        eval_spec = {
+            "preflight": ["{python}", "-c", "import pytest"],
+            "command": ["{python}", "-m", "pytest", eval_spec, "-q"],
+            "timeout_seconds": 300,
+            "working_directory": ".",
+            "environment": {},
+            "failure_exit_codes": [1],
+        }
+    return dataclasses.replace(
+        card,
+        schema_version=CURRENT_SCHEMA_VERSION,
+        eval=eval_spec,
+        authored_keys=card.authored_keys | {"schema_version", "eval"},
+    )

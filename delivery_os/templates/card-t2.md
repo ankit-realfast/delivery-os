@@ -1,4 +1,5 @@
 ---
+schema_version: 1
 id: "{id}"
 title: "{title}"
 tier: T2
