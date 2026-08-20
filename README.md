@@ -29,7 +29,7 @@ pytest is a *runtime* dependency: `dos verify` runs a card's eval with it.
 ## The whole interface
 
 ```bash
-dos new acme "retry failed webhooks" --parent C-0001   # draft a card
+dos new acme "retry failed webhooks" --parent C-0042   # draft a card
 dos lint                                               # is every card valid?
 dos move C-0007 commit --by priya                      # advance state
 dos verify C-0007                                      # run the card's eval
@@ -43,23 +43,24 @@ dos report                                             # the four numbers
 
 ```yaml
 ---
-id: C-0001
-title: named decider clause is contractual
+id: C-0042
+title: checkout failures are recoverable
 tier: T2
 state: commit
 parent: null
-decider: Ankit P <ankit.p@realfast.ai>
-eval: evals/C-0001_named_decider_test.py
+decider: Priya Raman <priya@example.com>
+eval: evals/C-0042_checkout_recovery_test.py
 behaviour_delta: none
-value_line: 'engagements where a late delivery is an unwinnable argument: 1 -> 0'
-kill_criterion: the first client refuses the Named Decider clause
-observation_date: 2026-12-01
+value_line: 'abandoned checkouts caused by transient failures: 4% -> below 1%'
+kill_criterion: recovery creates duplicate orders in production
+observation_date: 2026-09-30
 history:
-- {state: draft,   at: '2026-08-18T09:00:00+00:00', by: akp}
-- {state: contest, at: '2026-08-18T10:30:00+00:00', by: akp}
-- {state: commit,  at: '2026-08-19T02:30:00+00:00', by: akp}
+- {state: draft,   at: '2026-08-18T09:00:00+00:00', by: priya}
+- {state: contest, at: '2026-08-18T10:30:00+00:00', by: priya}
+- {state: commit,  at: '2026-08-19T02:30:00+00:00', by: priya}
 ---
-The Named Decider clause appears in the signed SOW.
+Customers can retry a checkout after a transient payment-provider failure without
+creating a duplicate order.
 ```
 
 Two rules make the format work:
