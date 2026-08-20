@@ -24,6 +24,7 @@ python3 -m venv .venv
 ```
 
 Python 3.11+. Depends on PyYAML and pytest, nothing else.
+pytest is a *runtime* dependency: `dos verify` runs a card's eval with it.
 
 ## The whole interface
 
@@ -193,14 +194,3 @@ docs/          design spec (the authority) and the build decision record
 
 The design document in `docs/` is the authority. Where this README and the spec
 disagree, the spec wins.
-
-## Tests
-
-```bash
-.venv/bin/pytest -q      # 200 tests
-```
-
-A note on how they're written, because it caused most of the defects found during
-the build: a test that passes when its guard is deleted is not a test. Several here
-were rebuilt specifically so they fail when the line they protect is removed. If you
-add one, delete the code it covers and watch it go red before you trust it.
