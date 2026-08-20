@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from datetime import date, datetime, timezone
+from importlib import resources
 from pathlib import Path
 
 from delivery_os.card import load_all, load_card, write_card
@@ -15,7 +16,9 @@ from delivery_os.machine import (
 )
 from delivery_os.meters import compute_m1, compute_m2, compute_m3, compute_scoreboard
 
-TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
+# Package data, not repo layout: a wheel does not contain the repo root,
+# so `<package>/../templates` only resolves under an editable install.
+TEMPLATES = resources.files("delivery_os") / "templates"
 
 
 def _slug(title: str) -> str:

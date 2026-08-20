@@ -187,7 +187,7 @@ delivery_os/
   cli.py       thin argparse shell over the above
 cards/         the corpus
 contract/      named-decider clause, reciprocal SLA, handle mapping
-templates/     card-t1, card-t2, handover
+  templates/ card-t1, card-t2, handover (shipped in the wheel)
 docs/          the design spec and the implementation plan
 ```
 
