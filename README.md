@@ -169,8 +169,11 @@ Read these before relying on it.
   record an outcome early.
 - **Eval strings are only checked for resolvability**, not relevance. `eval:` can
   point at a real test that tests the wrong thing.
-- The fix wave at `8d4f537` — 10 commits closing 5 critical defects — has **not had
-  an independent review**. Every earlier task did.
+- **Non-technical deciders can't easily use this.** The decision gate runs on GitHub
+  PR approvals, so a business-side decider has to review a git diff to register a
+  decision. If your decider isn't an engineer, this is the first thing that will
+  break — and GitHub Issues with a required issue form may simply be the better
+  substrate for you.
 
 ## Layout
 
