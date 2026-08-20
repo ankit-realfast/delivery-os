@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e .
+      - run: pip install -r requirements.txt
 
       - name: Collect changed card paths
         id: changed
@@ -64,7 +64,7 @@ jobs:
                 && (github.event.pull_request.merged && 'merged' || 'abandoned')
                 || 'open' }}
         run: |
-          python -m delivery_os.cli --root cards sync-pr \
+          python -m delivery_os --root cards sync-pr \
             --changed "$(cat changed.txt)" \
             --approvers "${{ steps.approvers.outputs.list }}" \
             --pr-state "$PR_STATE"

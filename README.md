@@ -19,25 +19,28 @@ it worked, so tools that scrape git have to guess. A card knows.
 ## Install
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
+python3 -m pip install -r requirements.txt
 ```
 
 Python 3.11+. Depends on PyYAML and pytest, nothing else.
-pytest is a *runtime* dependency: `dos verify` runs a card's eval with it.
+pytest is a *runtime* dependency: `python3 -m delivery_os verify` runs a card's
+eval with it.
 
 ## The whole interface
 
 ```bash
-dos new acme "retry failed webhooks" --parent C-0042   # draft a card
-dos lint                                               # is every card valid?
-dos move C-0007 commit --by priya                      # advance state
-dos verify C-0007                                      # run the card's eval
-dos observe C-0007 --by akp --moved --delta-held       # record the outcome
-dos report                                             # the four numbers
+python3 -m delivery_os new acme "retry failed webhooks" --parent C-0042
+python3 -m delivery_os lint
+python3 -m delivery_os move C-0007 commit --by priya
+python3 -m delivery_os verify C-0007
+python3 -m delivery_os observe C-0007 --by akp --moved --delta-held
+python3 -m delivery_os report
 ```
 
 `--root` points at the card corpus (default `cards/`).
+
+For a complete worked example—from an existing product problem to a closed card
+and the final report—see [End-to-end example](docs/end-to-end-example.md).
 
 ## What a card looks like
 
@@ -110,7 +113,7 @@ when the client is most willing to agree to be measured.
 ## The four numbers
 
 ```
-$ dos report
+$ python3 -m delivery_os report
 M1 decision latency   median 31.0h   open 3
 M2 eval fallibility   0.94   proven 47/50   never-run 2   never-red 1   no-eval 0
 M3 behaviour-delta debt  live 1   unowned 0   delta claim disproved 0
@@ -167,7 +170,7 @@ Read these before relying on it.
 - **Concurrent writes to the same card conflict.** `card-sync` pushes state while a
   human may be editing the same card on a branch. `history` is an appended list, so
   both sides touch the same lines. Not solved.
-- **`dos observe` warns but doesn't refuse before the observation date.** You can
+- **`python3 -m delivery_os observe` warns but doesn't refuse before the observation date.** You can
   record an outcome early.
 - **Eval strings are only checked for resolvability**, not relevance. `eval:` can
   point at a real test that tests the wrong thing.
