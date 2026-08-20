@@ -18,8 +18,8 @@ state: draft
 parent: null
 decider: Priya Raman <priya@example.com>
 eval:
-  preflight: [python3, --version]
-  command: [python3, evals/C-0042_checkout_recovery.py]
+  preflight: [python3, -c, "import example_checkout, evals.c0042_checkout_recovery"]
+  command: [python3, -m, evals.c0042_checkout_recovery]
   timeout_seconds: 300
   working_directory: .
   failure_exit_codes: [1]
@@ -122,7 +122,7 @@ inherited, so acceptance commands must not print secrets.
 
 ```yaml
 # Dependency-free Python check
-command: [python3, evals/C-0042_checkout_recovery.py]
+command: [python3, -m, evals.c0042_checkout_recovery]
 
 # TypeScript
 command: [npm, test, --, checkout-recovery]

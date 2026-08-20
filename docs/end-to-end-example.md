@@ -118,8 +118,8 @@ state: draft
 parent: null
 decider: Priya Raman <priya@client.example>
 eval:
-  preflight: [python3, --version]
-  command: [python3, evals/C-0001_checkout_recovery_eval.py]
+  preflight: [python3, -c, "import example_checkout, evals.c0001_checkout_recovery"]
+  command: [python3, -m, evals.c0001_checkout_recovery]
   timeout_seconds: 300
   working_directory: .
   failure_exit_codes: [1]
@@ -171,7 +171,7 @@ After filling in the draft, use commands to change `state`, `value_moved`,
 
 ## 4. Write the acceptance check before building
 
-Create `evals/C-0001_checkout_recovery_eval.py`:
+Create `evals/c0001_checkout_recovery.py`:
 
 ```python
 from example_checkout import place_order

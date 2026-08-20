@@ -7,8 +7,8 @@ state: draft
 parent: null
 decider: null
 eval:
-  preflight: [python3, --version]
-  command: [python3, evals/handover_eval.py]
+  preflight: [python3, -c, "import evals.handover_eval"]
+  command: [python3, -m, evals.handover_eval]
   - -q
   timeout_seconds: 300
   working_directory: .
