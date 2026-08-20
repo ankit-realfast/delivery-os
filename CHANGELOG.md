@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes are documented here. The project uses semantic versioning.
+Notable changes to the `main` branch are documented here.
 
-## 0.2.0 - Unreleased
+## Main
 
 ### Added
 
@@ -11,7 +11,7 @@ All notable changes are documented here. The project uses semantic versioning.
 - Atomic writes, concurrent-edit detection, migrations, and recoverable archives.
 - Approval evidence, JSON output, deterministic reports, diagnostics, dry runs,
   and expanded CLI commands.
-- Installable Python package and automated PyPI release workflow.
+- Installable Python package sourced directly from the repository.
 - Apache License 2.0 project and package metadata.
 - Card, eval, metric, configuration, migration, integration, security, support,
   architecture, and contribution documentation.

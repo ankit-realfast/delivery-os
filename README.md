@@ -6,8 +6,8 @@ measured business result in one Markdown file called a **card**.
 There is no server or database. Cards live with the code, can be reviewed in a pull
 request, and keep working without GitHub.
 
-> Project status: `0.2.0` is alpha. The card schema is versioned and legacy cards
-> are migratable, but the public package has not been released yet.
+> Project status: alpha. The `main` branch is the current product. Card schemas are
+> versioned so existing repositories remain migratable as the tool changes.
 
 ## Why it exists
 
@@ -33,17 +33,16 @@ python3 -m delivery_os lint
 ```
 
 Source development does not require an editable install. The package uses the
-Hatchling build backend, so normal development and release builds do not create
+Hatchling build backend, so normal development and package builds do not create
 `delivery_os.egg-info` in the checkout; `dos doctor` also flags that directory if
-another tool creates it. Installed releases expose the shorter `dos` command:
+another tool creates it. To expose the shorter `dos` command directly from `main`:
 
 ```bash
-pipx install delivery-os
+pipx install git+https://github.com/ankit-realfast/delivery-os.git@main
 dos version
 ```
 
-The installed command becomes available when the first public release is
-published.
+Re-run the pipx installation with `--force` whenever you want the latest `main`.
 
 ## Five-minute workflow
 
@@ -178,7 +177,6 @@ other evidence reference for decision-makers who do not use GitHub.
 
 - [End-to-end example](docs/end-to-end-example.md)
 - [Reference](docs/reference.md)
-- [Release process](docs/releases.md)
 - [GitHub integration](docs/github-integration.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
@@ -194,7 +192,7 @@ delivery_os/   schema, policy, command execution, metrics, integrations, and CLI
 cards/         active card collection
 contract/      named decision-maker clause, service agreement, and identity mapping
 docs/          guides and protocol references
-.github/       source-project automation and release workflows
+.github/       source-project automation
 ```
 
 Closing preserves evidence. Archiving moves a closed, unreferenced card out of the

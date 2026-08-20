@@ -156,7 +156,7 @@ def _as_schema_version(path: Path, raw: object) -> int:
     if raw not in SUPPORTED_SCHEMA_VERSIONS:
         supported = ", ".join(str(v) for v in SUPPORTED_SCHEMA_VERSIONS)
         raise ValueError(
-            f"{path}: unsupported schema_version {raw}; this delivery-os release "
+            f"{path}: unsupported schema_version {raw}; this delivery-os version "
             f"supports {supported}. Upgrade delivery-os before changing this card."
         )
     return raw

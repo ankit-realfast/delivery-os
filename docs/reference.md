@@ -1,7 +1,7 @@
 # delivery-os reference
 
-Installed releases expose `dos`. From a source checkout, replace `dos` with
-`python3 -m delivery_os`.
+Installing from the repository's `main` branch exposes `dos`. From a source
+checkout, replace `dos` with `python3 -m delivery_os`.
 
 ## Card format
 
@@ -113,8 +113,9 @@ Only a genuine pass or failure is evidence. Use `preflight` when a tool needs a
 separate setup check; any non-zero preflight result is an unrecorded error.
 
 `{python}` becomes the interpreter running delivery-os and exists for legacy
-compatibility. New cards should name the project's own interpreter because pipx is
-isolated from project dependencies. `{repo}` becomes the absolute project path.
+compatibility. New cards should name the project's own interpreter because the
+tool's installer does not include project dependencies. `{repo}` becomes the
+absolute project path.
 
 The working directory must stay inside the project. Explicit environment-variable
 names must appear in `allowed_eval_environment`. The current environment is
@@ -241,8 +242,8 @@ Migration adds `schema_version: 1` and converts a legacy pytest path into an
 argument-list command with a dependency preflight. It does not invent missing
 approval evidence or outcomes.
 
-- A release reads the current card schema and at least the immediately previous one.
+- `main` reads the current card schema and at least the immediately previous one.
 - Unknown future versions are rejected before mutation.
 - Migrations are deterministic and support `--dry-run`.
-- Breaking card or metric semantics require a major release and upgrade guide.
+- Breaking card or metric semantics require a schema change and migration guide.
 - Closed historical evidence is never silently rewritten.

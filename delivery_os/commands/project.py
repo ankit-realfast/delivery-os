@@ -46,11 +46,7 @@ def _install_github_workflows(root: Path, *, force: bool) -> list[Path]:
             raise FileExistsError(f"{target} already exists; use --force to replace it")
         written.append(target)
         target.parent.mkdir(parents=True, exist_ok=True)
-        text = (
-            (source / name)
-            .read_text(encoding="utf-8")
-            .replace("__DELIVERY_OS_VERSION__", __version__)
-        )
+        text = (source / name).read_text(encoding="utf-8")
         if target.exists():
             atomic_replace(target, text)
         else:

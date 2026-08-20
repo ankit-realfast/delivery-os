@@ -1,8 +1,8 @@
 # GitHub integration
 
 `dos init --github` installs lint and card-sync workflows. The generated workflows
-install an exact delivery-os version so a new release cannot silently change a
-repository's policy.
+install delivery-os directly from `main`, so every run uses the current repository
+policy.
 
 ## Approval mapping
 

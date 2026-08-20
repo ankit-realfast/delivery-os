@@ -371,8 +371,9 @@ outcome evidence without counting its behavior delta as live debt.
 
 ## 10. Optional: enforce the decision gate with GitHub
 
-The repository includes `.github/workflows/cards.yml` for linting and
-`.github/workflows/card-sync.yml` for state synchronization.
+Running `dos init --github` installs `.github/workflows/cards.yml` for linting and
+`.github/workflows/card-sync.yml` for state synchronization in the initialized
+repository.
 
 First map the decision-maker's GitHub username to the exact `decider` value in
 `contract/deciders.yml`:
